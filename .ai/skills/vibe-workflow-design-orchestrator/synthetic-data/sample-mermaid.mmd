@@ -1,0 +1,20 @@
+```mermaid
+flowchart LR
+    classDef aiNode fill:#FFE0B2,stroke:#FB8C00,stroke-width:2px
+    classDef hitlNode fill:#FFCDD2,stroke:#E53935,stroke-width:2px
+    classDef fallbackNode fill:#ECEFF1,stroke:#607D8B,stroke-width:2px
+    classDef startEnd fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px
+
+    A([Folder lộn xộn]):::startEnd --> B[Quét file + metadata]:::aiNode
+    B --> C[Phân loại + chuẩn hóa tên]:::aiNode
+    C --> D{File đọc được?}
+    D -- Không --> E[Đánh dấu kiểm tra tay]:::fallbackNode
+    D -- Có --> F[Build plan theo policy]:::aiNode
+    E --> F
+    F --> G{User duyệt plan?}:::hitlNode
+    G -- Không --> H[User chỉnh plan]:::hitlNode
+    H --> F
+    G -- Có --> I[Script copy file đúng chỗ]:::aiNode
+    I --> J[Ghi execution log]:::aiNode
+    J --> K([Folder đã tổ chức]):::startEnd
+```

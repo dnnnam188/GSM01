@@ -50,6 +50,7 @@
 | Git / commit / branch | `.ai/skills/git-workflow.md` |
 | Viết test / sửa bug | `.ai/skills/testing.md` + `.ai/context/bug-history.md` |
 | Giao diện / UI / CSS | `.ai/skills/ui-ux-guide.md` |
+| Thiết kế & tối ưu hóa workflow / quy trình (as-is, to-be, hardening 4 lớp) | `.ai/skills/vibe-workflow-design-orchestrator/SKILL.md` |
 | Phát triển tính năng mới | `docs/PRD.md` |
 | Hiểu kiến trúc tổng thể | `.ai/context/architecture.md` |
 

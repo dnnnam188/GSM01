@@ -1,0 +1,22 @@
+{
+  "name": "vibe-workflow-design-orchestrator",
+  "version": "1.0.0",
+  "description": "Sinh trọn vẹn Workflow Design Package (chuẩn Workflow Mindset) cho 1 use-case doanh nghiệp: 6 pha móc nối → Design Doc 7 phần + deck tham mưu 30 ngày.",
+  "phases": ["W0_INTAKE", "W1_USECASE_MATRIX", "W2_ASIS_TOBE_ESIA", "W3_HARDENING", "W4_MERMAID", "W5_INFOGRAPHIC", "W6_LEADERSHIP_DECK", "W7_PACKAGE"],
+  "dependencies": ["vibe-score-workflow-design", "vibe-aiworkforce", "vibe-slide-orchestrator"],
+  "scripts": {
+    "validator": "script/validator.py",
+    "anonymizer": "script/anonymizer.py",
+    "review_queue": "script/review_queue.py"
+  },
+  "hooks": "hooks.json",
+  "schema": "schema/workflow-design-package.schema.json",
+  "prompts": [
+    "prompt/01-usecase-impact-matrix.md",
+    "prompt/02-workflow-design-esia.md",
+    "prompt/03-production-hardening.md",
+    "prompt/04-mermaid-diagram.md",
+    "prompt/05-generate-workflow-image.md",
+    "prompt/06-notebooklm-leadership-deck.md"
+  ]
+}

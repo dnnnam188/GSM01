@@ -1,0 +1,209 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Workflow Design Package",
+  "description": "Gói thiết kế workflow hoàn chỉnh (chuẩn Workflow Mindset): 6 pha móc nối → Design Doc 7 phần. Mỗi pha có deliverable + SLI/SLO + evidence. Chain rule: output pha N = input pha N+1 (BR-W3). HITL bắt buộc ở bước tiền bạc/PII (BR-W2). Không bịa số — chưa đo thì ghi [cần đo] (BR-W4).",
+  "type": "object",
+  "required": ["package_id", "use_case", "phases", "design_doc", "evidence", "confidence_score", "need_review"],
+  "properties": {
+    "package_id": { "type": "string", "minLength": 1 },
+    "use_case": {
+      "type": "object",
+      "description": "Use-case được thiết kế (từ W0 intake / W1 pick)",
+      "required": ["name", "department"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "department": { "type": "string" },
+        "constraint": { "type": "string", "description": "Ràng buộc compliance/PII/tiền bạc nếu có" }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "description": "6 pha móc nối W1→W6. Mỗi pha: deliverable + sli_slo + output.",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "deliverable", "sli_slo", "output_ref"],
+        "properties": {
+          "id": { "type": "string", "enum": ["W1", "W2", "W3", "W4", "W5", "W6"] },
+          "name": { "type": "string" },
+          "deliverable": { "type": "string", "description": "1 câu: pha này sinh ra cái gì" },
+          "sli_slo": {
+            "type": "array",
+            "description": "Metric đo 'đạt', quantifiable",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["sli", "slo"],
+              "properties": {
+                "sli": { "type": "string", "description": "Service Level Indicator — cái đo" },
+                "slo": { "type": "string", "description": "Target tối thiểu, vd 'as-is ≥5 bước'" },
+                "met": { "type": "boolean" }
+              }
+            }
+          },
+          "output_ref": { "type": "string", "description": "Đường dẫn file output pha này" },
+          "prompt_ref": { "type": "string", "description": "prompt/0X-*.md dùng" }
+        }
+      }
+    },
+    "design_doc": {
+      "type": "object",
+      "description": "Design Doc 7 phần (W7 ráp từ W2-W6)",
+      "required": ["as_is", "to_be_esia", "hardening", "mermaid", "automation_steps"],
+      "properties": {
+        "as_is": {
+          "type": "object",
+          "description": "Phần 1 — hiện trạng (từ W2)",
+          "required": ["steps"],
+          "properties": {
+            "steps": {
+              "type": "array",
+              "description": "Bảng as-is 5 cột, ≥5 bước (SLO)",
+              "minItems": 5,
+              "items": {
+                "type": "object",
+                "required": ["step", "actor", "input", "output"],
+                "properties": {
+                  "step": { "type": "string" },
+                  "actor": { "type": "string" },
+                  "input": { "type": "string" },
+                  "output": { "type": "string" },
+                  "bottleneck_or_repeat_error": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "to_be_esia": {
+          "type": "object",
+          "description": "Phần 2 — ESIA to-be (từ W2)",
+          "required": ["steps"],
+          "properties": {
+            "steps": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["step", "esia_action", "who"],
+                "properties": {
+                  "step": { "type": "string" },
+                  "esia_action": { "type": "string", "enum": ["E", "S", "I", "A"], "description": "Eliminate/Simplify/Integrate/Automate" },
+                  "detail": { "type": "string" },
+                  "who": { "type": "string", "enum": ["AI", "Người", "AI+Người"] },
+                  "automation_branch": { "type": "string", "enum": ["n8n", "AI Agent", "App vibe coding", "không"], "description": "Nhánh automation nếu action=A" },
+                  "hitl": { "type": "boolean", "description": "true nếu bước cần Human-in-the-loop" }
+                }
+              }
+            },
+            "hitl_note": { "type": "string", "description": "Đoạn ghi rõ bước nào cần HITL và tại sao" }
+          }
+        },
+        "hardening": {
+          "type": "object",
+          "description": "Phần 3 — 4 lớp hardening (từ W3)",
+          "required": ["layers", "reliability_self_assessment"],
+          "properties": {
+            "layers": {
+              "type": "array",
+              "description": "4 lớp: fallback / execution log / edge case / HITL",
+              "items": {
+                "type": "object",
+                "required": ["step", "fallback", "execution_log", "edge_case"],
+                "properties": {
+                  "step": { "type": "string" },
+                  "fallback": { "type": "string" },
+                  "execution_log": { "type": "string" },
+                  "edge_case": { "type": "string" },
+                  "hitl": { "type": "string", "description": "ai/khi nào" }
+                }
+              }
+            },
+            "compliance_note": { "type": "string" },
+            "reliability_self_assessment": {
+              "type": "object",
+              "description": "Tự đánh giá 6/6 thuộc tính tin cậy — thẳng thắn",
+              "required": ["fault_tolerant", "observable", "scalable", "workable", "idempotent", "auditable"],
+              "properties": {
+                "fault_tolerant": { "type": "string", "enum": ["đạt", "một phần", "thiếu"] },
+                "observable": { "type": "string", "enum": ["đạt", "một phần", "thiếu"] },
+                "scalable": { "type": "string", "enum": ["đạt", "một phần", "thiếu"] },
+                "workable": { "type": "string", "enum": ["đạt", "một phần", "thiếu"] },
+                "idempotent": { "type": "string", "enum": ["đạt", "một phần", "thiếu"] },
+                "auditable": { "type": "string", "enum": ["đạt", "một phần", "thiếu"] }
+              }
+            }
+          }
+        },
+        "mermaid": {
+          "type": "object",
+          "description": "Phần 4 — sơ đồ Mermaid (từ W4)",
+          "required": ["source", "valid", "node_count"],
+          "properties": {
+            "source": { "type": "string", "minLength": 1, "description": "Mã Mermaid (.mmd)" },
+            "valid": { "type": "boolean", "description": "Render được trên mermaid.live" },
+            "node_count": { "type": "integer", "maximum": 8, "description": "≤8 node (SLO BR-W6)" },
+            "has_ai_node": { "type": "boolean" },
+            "has_hitl_node": { "type": "boolean", "description": "BẮT BUỘC ≥1 node HITL (SLO)" }
+          }
+        },
+        "infographic_prompt": {
+          "type": "object",
+          "description": "Phần 5 — prompt render ảnh + link ảnh (từ W5)",
+          "properties": {
+            "prompt": { "type": "string" },
+            "image_link": { "type": "string" },
+            "label_vietnamese_accurate": { "type": "boolean" }
+          }
+        },
+        "before_after": {
+          "type": "object",
+          "description": "Phần 6 (tuỳ chọn) — so sánh Trước/Sau",
+          "properties": {
+            "thoi_gian": { "type": "string" },
+            "loi": { "type": "string" },
+            "chi_phi": { "type": "string" }
+          }
+        },
+        "automation_steps": {
+          "type": "array",
+          "description": "Phần 7 — danh sách bước cần tự động hoá (tổng hợp W2-W3)",
+          "items": {
+            "type": "object",
+            "required": ["step", "tool", "hitl", "fallback"],
+            "properties": {
+              "step": { "type": "string" },
+              "tool": { "type": "string" },
+              "hitl": { "type": "string" },
+              "fallback": { "type": "string", "description": "Phương án dự phòng khi AI lỗi" }
+            }
+          }
+        }
+      }
+    },
+    "leadership_deck": {
+      "type": "object",
+      "description": "Deck tham mưu lãnh đạo (từ W6) — CRAFT 5 phần",
+      "properties": {
+        "goal": { "type": "string" },
+        "roadmap_30_days": { "type": "string" },
+        "measurable_benefits": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Evidence cấp package. Số liệu chưa đo → không claim; ghi [cần đo] (BR-W4).",
+      "items": {
+        "type": "object",
+        "required": ["claim", "verbatim_quote", "source"],
+        "properties": {
+          "claim": { "type": "string" },
+          "verbatim_quote": { "type": "string", "minLength": 1 },
+          "source": { "type": "string" },
+          "location": { "type": "string" }
+        }
+      }
+    },
+    "confidence_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "need_review": { "type": "boolean" }
+  }
+}
