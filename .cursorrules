@@ -1,0 +1,12 @@
+# Cursor Rules
+
+All project conventions live in `AGENTS.md` — it is the single source of truth.
+This file is intentionally short to prevent rule drift between agents.
+
+On session start:
+1. Read `AGENTS.md` (session ritual, core rules, documentation map).
+2. Read `.ai/JOURNAL.md` (latest 3-5 entries) to learn what just happened.
+3. Read the "Đang Dở / In Progress" section of `.ai/TASKS.md` and continue that work.
+
+On session end:
+Check `.ai/rules/definition-of-done.md`, update `.ai/TASKS.md`, and append an entry to `.ai/JOURNAL.md`.
