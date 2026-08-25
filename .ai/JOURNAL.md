@@ -13,6 +13,89 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D2: Tầng Dữ Liệu Trên Neon & Hợp Đồng 8 Tool
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-002 ✅, T-003 ✅ · phát sinh ADR-008
+
+### ✅ Đã làm được
+
+**Đo thực tế trước khi chốt (thay vì tin trí nhớ)** — phần giá trị nhất của phiên này:
+- Gọi API list-models bằng key thật: `gemini-2.5-flash` và `gemini-2.5-flash-lite` trả
+  **HTTP 404 "no longer available to new users"**. Nếu hardcode theo tài liệu phổ biến thì
+  toàn bộ dự án đã hỏng ngay ở D4.
+- Đo TTFT bằng streaming SSE, mỗi model 2 lần. Kết quả **ngược với trực giác**:
+  `gemini-3.5-flash-lite` 0,86–0,96s · `gemini-3.5-flash` 2,04–2,07s ·
+  `gemini-3.6-flash` 5,10–5,94s · `gemini-3.7-flash` **timeout >30s** ·
+  `gemini-flash-latest` **timeout >30s**.
+  → **Model mới hơn chậm hơn nhiều lần.** Chọn theo số hiệu phiên bản là phá ngưỡng 3 giây.
+- Đo chiều embedding: `gemini-embedding-001` mặc định trả **3072**, ép được xuống **768**.
+  Quan trọng vì index HNSW của pgvector chỉ hỗ trợ tối đa 2000 chiều.
+- → Ghi **ADR-008**: ghim `gemini-3.5-flash-lite` cho router, `gemini-3.5-flash` cho trả lời,
+  cấm dùng alias `-latest` ở mọi nơi.
+
+**T-002 — Tầng dữ liệu (đã áp lên Neon thật, không phải localhost)**:
+- Neon PostgreSQL 17.11, `pgvector` 0.8.0, vùng `ap-southeast-1`.
+- **14 bảng** (nhiều hơn 12 dự kiến — tách `ride_events`, `payments`, `knowledge_chunks`,
+  `csat_ratings` thành bảng riêng thay vì nhồi vào JSONB).
+- Ràng buộc đẩy xuống tầng DB, **đã thử phá và DB chặn thật**:
+  - ghi trùng `idempotency_key` → `duplicate key value violates unique constraint` ✅
+  - `REJECTED` mà không có lý do → `violates check constraint refund_reject_needs_reason` ✅
+- Seed tất định (`random.Random(42)`): 52 người dùng, 20 tài xế, **311 chuyến**,
+  18 khoá `business_config` đối soát từ `data/knowledge_base/`.
+- **11 case khó có `ride_code` cố định**, trong đó 3 cặp có/không đủ điều kiện
+  (`DOUBLE-01`/`02`, `DETOUR-01`/`02`, `CANCELFEE-01`/`02`) — dùng để kiểm tra agent
+  **từ chối đúng**, không chỉ đồng ý đúng.
+- 4 truy vấn kiểm chứng chạy thật: lọc đúng `XSM-DETOUR-01` (+61,5%) và loại đúng
+  `XSM-DETOUR-02` (+13,9%); lọc đúng `XSM-CANCELFEE-01` (giây 74) và loại `-02` (phút 6).
+
+**T-003 — Hợp đồng 8 tool**:
+- 5 tool ghi / 3 tool đọc, `extra="forbid"` để LLM bịa tham số là fail sớm.
+- `ToolErrorType` 3 nhánh `RETRYABLE / FATAL / NEEDS_HUMAN` — quyết định graph thử lại,
+  bỏ cuộc, hay `interrupt()`.
+- Trường PII đánh dấu bằng `pii_field()`, đọc lại bằng `pii_fields_of()` — tokenizer ở T-010 dùng.
+- 11 test pass, `ruff` sạch.
+
+### 🐞 Hai lỗi thật do test bắt được (không phải test cho có)
+1. **`field_validator` không chạy khi trường vắng mặt.** `create_ticket` thiếu `ride_code` và
+   `modify_ride` gọi rỗng đều **lọt qua validation**. Phải đổi sang `model_validator(mode="after")`.
+   Đây đúng là lỗi LLM hay tạo ra nhất: gọi tool với payload thiếu.
+2. **`class ToolResult[T]` là cú pháp PEP 695, chỉ chạy từ Python 3.12**, trong khi
+   `pyproject.toml` khai báo `requires-python >=3.11`. `ruff` bắt được `invalid-syntax`.
+   Đã đổi sang `Generic[T]`. Nếu để nguyên thì vỡ lúc deploy lên Render.
+
+### 📁 File đã thay đổi
+- `src/backend/db/schema.sql` — **mới**, 14 bảng + ràng buộc + index HNSW
+- `src/backend/db/connection.py`, `apply_schema.py`, `seed.py` — **mới**
+- `src/backend/tools/contracts.py` — **mới**, 8 tool + error taxonomy + `TOOL_REGISTRY`
+- `tests/test_tool_contracts.py` — **mới**, 11 test
+- `pyproject.toml`, `.env.example` — **mới**
+- `docs/DATA-MODEL.md` — **mới**, tài liệu 14 bảng + 11 case khó + truy vấn kiểm chứng
+- `.ai/context/decisions.md` — thêm ADR-008
+- `.ai/context/codemap.md`, `.ai/rules/definition-of-done.md`, `.ai/TASKS.md` — cập nhật
+
+### ⏳ Đang dở
+- Không. T-002 và T-003 đã thoả DoD → chuyển ✅.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- `uv run` **không dùng được** trên máy này: nó nhắm vào Python toàn cục ở `C:\Program Files`
+  và lỗi `Access is denied`. Đã chuyển sang gọi thẳng `.venv/Scripts/python.exe` và ghi vào DoD.
+- Chưa kiểm chứng: chưa gọi thử tool nào thật (mới chỉ có contract, chưa có phần thực thi),
+  chưa index kho tri thức vào `knowledge_chunks`.
+- ⚠️ Nhắc cho D3: gói free của Gemini có giới hạn theo phút. Bộ eval 130 câu chạy liên tiếp
+  rất dễ dính 429 — phải có nghỉ giữa các lần gọi và cache kết quả embedding.
+
+### ➡️ Việc tiếp theo
+- **D3 (T-008) — Eval harness. Đây là task không được cắt.**
+  - 80 câu intent có nhãn, phủ đủ 9 dạng đầu vào ở `docs/intent-taxonomy.md` mục 3
+    (không dấu, teencode, sai chính tả, trộn Anh–Việt, cảm xúc mạnh, cực ngắn, nhiều ý,
+    ngoài phạm vi, prompt injection).
+  - 30 câu RAG ↔ đoạn KB đúng; 20 prompt red-team PII.
+  - `eval/run_eval.py` in bảng 5 chỉ số: intent accuracy · recall@3 · p95 TTFT · token/lượt · PII leak.
+  - Dùng 11 `ride_code` cố định trong `docs/DATA-MODEL.md` mục 6 làm dữ liệu cho câu hỏi.
+
+---
+
 ## [2026-08-25] – D1: Đóng Băng Đặc Tả, Chốt 7 ADR & Tái Cấu Trúc Sprint 13 Ngày
 
 - **Agent / Người thực hiện**: Claude Code

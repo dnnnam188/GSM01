@@ -12,6 +12,50 @@
 
 ---
 
+## ADR-008 — Ghim `gemini-3.5-flash-lite` cho router và `gemini-3.5-flash` cho trả lời
+
+- **Ngày**: 2026-08-26
+- **Trạng thái**: `Đang áp dụng` — bổ sung chi tiết cho ADR-001, không thay thế nó.
+- **Bối cảnh**: ADR-001 chốt "Gemini Flash" nhưng chưa chốt bản nào. Đã đo TTFT thật bằng
+  streaming SSE với key của dự án, mỗi cấu hình 2 lần, prompt tiếng Việt ngắn:
+
+  | Model | TTFT lần 1 | TTFT lần 2 | Kết luận |
+  |---|---|---|---|
+  | `gemini-3.5-flash-lite` | 0,96s | 0,86s | ✅ nhanh nhất |
+  | `gemini-flash-lite-latest` | 1,05s | 0,90s | ✅ nhưng là alias, không ghim được |
+  | `gemini-3.5-flash` | 2,07s | 2,04s | ✅ còn biên an toàn |
+  | `gemini-3.1-flash-lite` | 3,78s | 3,60s | ❌ vượt ngưỡng |
+  | `gemini-3.6-flash` | 5,10s | 5,94s | ❌ vượt ngưỡng xa |
+  | `gemini-3.7-flash` | timeout > 30s | timeout > 30s | ❌ không dùng được |
+  | `gemini-flash-latest` | timeout > 30s | timeout > 30s | ❌ alias trỏ vào bản chậm |
+  | `gemini-2.5-flash`, `-lite` | HTTP 404 | — | ❌ không còn mở cho tài khoản mới |
+
+- **Quyết định**:
+  - Router (phân loại intent + trích slot): **`gemini-3.5-flash-lite`**
+  - Sinh câu trả lời / gọi tool: **`gemini-3.5-flash`**
+  - Embedding: **`gemini-embedding-001`** với `outputDimensionality=768`
+  - **Cấm dùng alias `-latest`** ở mọi nơi.
+- **Lý do**:
+  - **Model mới hơn không hề nhanh hơn.** 3.6 và 3.7 chậm hơn 3.5 nhiều lần — nếu chọn theo
+    số hiệu phiên bản thì đã phá ngưỡng 3 giây ngay từ ngày đầu mà không hiểu vì sao.
+  - Alias `-latest` khiến kết quả eval không tái lập được, và có thể tự trỏ sang bản chậm
+    bất cứ lúc nào — `gemini-flash-latest` timeout ngay trong phép đo này.
+  - 768 chiều là bắt buộc: `gemini-embedding-001` mặc định trả 3072 chiều, còn index HNSW
+    của pgvector chỉ hỗ trợ tối đa 2000 chiều.
+- **Phương án đã loại**:
+  - `gemini-2.5-flash` (bản mà tài liệu phổ biến hay nhắc) — loại vì trả **HTTP 404,
+    không còn mở cho tài khoản mới**.
+  - Dùng alias `-latest` cho tiện — loại vì phá tính tái lập của eval.
+  - Dùng cùng một model cho cả router và trả lời — loại vì router chạy mọi lượt, tiết kiệm
+    ~1,1s ở đó là khoản rẻ nhất trong toàn bộ ngân sách độ trễ.
+- **Hệ quả**:
+  - Tên model nằm trong `.env` (`LLM_ROUTER_MODEL`, `LLM_ANSWER_MODEL`), không hardcode.
+  - **Đo lại bảng này trước khi đổi bất kỳ model nào.** Con số ở trên đo ngày 2026-08-26 từ
+    Việt Nam; độ trễ phụ thuộc vùng và thời điểm.
+  - Ngân sách 1,5s cho token đầu tiên trong `architecture.md` mục 5 vẫn đứng vững với 3.5-flash.
+
+---
+
 ## ADR-007 — Python dùng `snake_case`, ghi đè quy ước `camelCase` trong coding-style
 
 - **Ngày**: 2026-08-25

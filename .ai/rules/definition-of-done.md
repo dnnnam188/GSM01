@@ -36,7 +36,7 @@
 ### Khi đụng vào Agent / prompt / RAG / router (đặc thù GSM-01)
 > ⚠️ Với hệ LLM, "chạy thử thấy đúng vài câu" **không phải** bằng chứng. Bộ eval mới là bằng chứng.
 
-- [ ] Đã chạy `uv run python -m eval.run_eval` **sau** thay đổi và dán bảng số vào JOURNAL.
+- [ ] Đã chạy `.venv/Scripts/python.exe -m eval.run_eval` **sau** thay đổi và dán bảng số vào JOURNAL.
 - [ ] Độ chính xác intent vẫn **≥ 90%** (không được tụt so với lần chạy trước).
 - [ ] p95 **TTFT vẫn < 3s** — đo token đầu tiên, không phải thời gian trả xong.
 - [ ] Bộ red-team PII vẫn **0 ca lộ**.
@@ -62,14 +62,17 @@
 
 ### Dự án này (GSM-01)
 
-> Các lệnh dưới đây **chưa tồn tại** cho tới khi task tương ứng hoàn thành. Khi tạo ra chúng
-> (T-008, T-009), giữ đúng tên lệnh ở đây để mọi agent dùng chung một cách kiểm chứng.
+> Môi trường: venv tại `.venv/` (tạo bằng `uv`). Trên Windows gọi thẳng
+> `.venv/Scripts/python.exe`, **không** dùng `uv run` (nó nhắm vào Python toàn cục và sẽ lỗi
+> `Access is denied`).
 
-| Vùng | Lệnh bắt buộc | Có từ task |
+| Vùng | Lệnh bắt buộc | Trạng thái |
 |---|---|---|
-| Backend Python | `uv run ruff check src/` → `uv run pytest` | T-009 |
-| **Agent / prompt / RAG** | `uv run python -m eval.run_eval` → đọc bảng 5 chỉ số | T-008 |
-| Frontend | `npm run lint` → `npm run build` | T-006 |
+| Backend Python | `.venv/Scripts/python.exe -m ruff check src/ tests/` → `.venv/Scripts/python.exe -m pytest -q` | ✅ Chạy được |
+| Schema DB | `.venv/Scripts/python.exe -m src.backend.db.apply_schema` (chạy lại được nhiều lần) | ✅ Chạy được |
+| Seed dữ liệu | `.venv/Scripts/python.exe -m src.backend.db.seed` (⚠️ TRUNCATE toàn bộ) | ✅ Chạy được |
+| **Agent / prompt / RAG** | `.venv/Scripts/python.exe -m eval.run_eval` → đọc bảng 5 chỉ số | ⏳ Có từ T-008 |
+| Frontend | `npm run lint` → `npm run build` | ⏳ Có từ T-006 |
 | Toàn hệ thống (trước khi gọi một mốc là xong) | Mở bản **đã deploy** (Vercel + Render), đăng nhập cả 2 vai trò, chạy trọn kịch bản HITL: khách đòi hoàn 120.000đ → agent dừng → CSKH duyệt → khách nhận thông báo | T-009 |
 
 **Ba con số phải dán vào JOURNAL mỗi khi đóng một mốc**: `intent accuracy` · `p95 TTFT` · `PII leak count`.

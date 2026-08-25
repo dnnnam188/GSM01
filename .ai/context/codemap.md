@@ -2,10 +2,8 @@
 
 > 🎯 **Mục đích**: Trả lời nhanh câu hỏi *"Muốn sửa X thì mở file nào?"* để Agent không phải quét cả repo.
 >
-> ⚠️ **TRẠNG THÁI HIỆN TẠI (2026-08-25)**: dự án **chưa có mã nguồn**. `src/` và `tests/` mới chỉ có
-> `.gitkeep`. Mục 2 dưới đây là **cấu trúc dự kiến đã chốt**, chưa tồn tại trên đĩa —
-> đừng trích dẫn nó như thể đã có. Mỗi khi tạo file thật, chuyển dòng tương ứng sang mục 2 và
-> ghi rõ file + hàm.
+> ⚠️ **TRẠNG THÁI (2026-08-26)**: đã có tầng dữ liệu và hợp đồng tool (T-002, T-003).
+> Tầng agent, API và giao diện **chưa tồn tại** — mục 3 là kế hoạch, đừng trích dẫn như thể đã có.
 
 ## 1. Điểm Vào Của Dự Án (Entry Points)
 
@@ -14,10 +12,15 @@
 | Kho tri thức RAG | `data/knowledge_base/*.md` (7 file) | ✅ Đã có |
 | Đặc tả tính năng | `docs/PRD.md` | ✅ Đã có |
 | Tập nhãn intent | `docs/intent-taxonomy.md` | ✅ Đã có |
+| Schema DB | `src/backend/db/schema.sql` | ✅ Đã có, đã áp lên Neon |
+| Seed dữ liệu | `src/backend/db/seed.py` | ✅ Đã có |
+| Hợp đồng tool | `src/backend/tools/contracts.py` | ✅ Đã có |
+| Tài liệu schema | `docs/DATA-MODEL.md` | ✅ Đã có |
 | Backend | `src/backend/main.py` | ⏳ Chưa có (T-009) |
 | Frontend | `src/frontend/` (Next.js) | ⏳ Chưa có (T-006) |
 | Bộ eval | `eval/run_eval.py` | ⏳ Chưa có (T-008) |
-| Biến môi trường | `.env.example` | ⏳ Chưa có (T-009) |
+| Biến môi trường | `.env.example` | ✅ Đã có |
+| Phụ thuộc Python | `pyproject.toml` | ✅ Đã có (`uv`, venv tại `.venv/`) |
 
 ## 2. Bản Đồ Tính Năng → Mã Nguồn (đã tồn tại)
 
@@ -30,6 +33,13 @@
 | Chuẩn tài xế & phân cấp khiếu nại | `data/knowledge_base/05_driver_conduct_and_safety.md` | |
 | FAQ & tính năng chung | `data/knowledge_base/06_general_faq_and_features.md` | |
 | Quy tắc ẩn danh PII | `data/knowledge_base/07_pii_and_privacy_policy.md` | Cơ sở nghiệp vụ của ADR-004 |
+| **Định nghĩa 14 bảng** | `src/backend/db/schema.sql` | Ràng buộc `UNIQUE`/`CHECK` là tầng bảo vệ thật, không phải trang trí |
+| **Ngưỡng nghiệp vụ** | `src/backend/db/seed.py` → `BUSINESS_CONFIG` | 18 khoá, phải đồng bộ với `data/knowledge_base/` |
+| **Case khó cho demo/eval** | `src/backend/db/seed.py` → `CASE_RIDES` | 11 mã chuyến cố định, xem `docs/DATA-MODEL.md` mục 6 |
+| **Hợp đồng 8 tool** | `src/backend/tools/contracts.py` → `TOOL_REGISTRY` | Sửa contract phải chạy lại `pytest` |
+| Sinh idempotency key | `src/backend/tools/contracts.py` → `WriteToolInput.build_idempotency_key()` | Đổi cách sinh = mất tác dụng chống trùng (ADR-005) |
+| Nhãn trường PII | `src/backend/tools/contracts.py` → `pii_field()`, `pii_fields_of()` | Tokenizer ở T-010 đọc nhãn này |
+| Kết nối DB | `src/backend/db/connection.py` → `get_connection()` | Đọc `DATABASE_URL` từ `.env` |
 
 ## 3. Cấu Trúc Dự Kiến (chưa tồn tại — kế hoạch)
 
@@ -59,7 +69,9 @@ eval/
 |---|---|---|
 | `data/knowledge_base/03_*.md` | Chứa ngưỡng hoàn tiền — trùng khái niệm với `business_config` | Sửa một nơi phải đồng bộ nơi kia, nếu không agent trả lời một đằng, hệ thống xử một nẻo |
 | `src/backend/pii/tokenizer.py` (sắp có) | Mọi tool đọc dữ liệu đều đi qua đây; hỏng = lộ PII | Sửa xong **bắt buộc** chạy lại bộ red-team trong `eval/` |
-| `src/backend/tools/` (sắp có) | Có `idempotency_key` với ràng buộc `UNIQUE` | Đổi cách sinh key = mất tác dụng chống trùng (ADR-005) |
+| `src/backend/tools/contracts.py` | Có `idempotency_key` với ràng buộc `UNIQUE`; dùng `model_validator` chứ **không** `field_validator` cho ràng buộc liên trường — `field_validator` KHÔNG chạy khi trường vắng mặt | Sửa xong chạy `pytest` |
+| `src/backend/db/seed.py` | `TRUNCATE ... CASCADE` — **xoá sạch dữ liệu** mỗi lần chạy | Không chạy trên DB có dữ liệu thật |
+| `pyproject.toml` → `requires-python` | Khai báo `>=3.11` nên **không được dùng cú pháp PEP 695** (`class Foo[T]`) | `ruff check` sẽ báo `invalid-syntax` nếu vi phạm |
 
 ## 5. Nơi KHÔNG Được Sửa Tay
 

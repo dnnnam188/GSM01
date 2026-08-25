@@ -47,8 +47,10 @@
 > Agent mới vào phiên: đọc mục này trước tiên.
 
 - *(Trống — không có task nào đang cầm dở.)*
-- **Việc kế tiếp phải cầm**: **T-002 + T-003** (D2 · 26/08) trong mục ☐ bên dưới.
-  Đọc `docs/PRD.md` mục 3, `docs/intent-taxonomy.md` cột "Tool sẽ gọi", và ADR-005/ADR-006 trước khi bắt đầu.
+- **Việc kế tiếp phải cầm**: **T-008 — Eval harness** (D3 · 27/08). Đây là task **không được cắt**.
+  Đọc trước: `docs/intent-taxonomy.md` (10 nhãn + 9 dạng đầu vào tiếng Việt phải phủ),
+  `docs/DATA-MODEL.md` mục 6 (11 case khó đã cài sẵn, dùng làm câu hỏi cho golden set),
+  và ADR-008 (model đã ghim — **không** dùng alias `-latest`, sẽ phá tính tái lập của eval).
 
 ---
 
@@ -56,9 +58,7 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| T-002 | Schema PostgreSQL + seed data | D2 | P0 | 12 bảng có DDL chạy được; seed 50 khách/300 chuyến **có cài sẵn case khó** (double charge, đi vòng >30%, huỷ sớm, bỏ quên đồ) | Gồm `tool_calls`, `audit_log`, `business_config` (ADR-005, ADR-006) |
-| T-003 | Tool contracts (Pydantic) | D2 | P0 | 8 tool có input/output schema + error taxonomy `RETRYABLE/FATAL/NEEDS_HUMAN`; mọi tool ghi đều có `idempotency_key` | Xem `docs/intent-taxonomy.md` cột "Tool sẽ gọi" |
-| T-008 | **Eval harness** | D3 | P0 | `uv run python -m eval.run_eval` in bảng: intent accuracy · recall@3 · p95 TTFT · token/lượt · số ca lộ PII | 80 câu intent + 30 câu RAG + 20 prompt red-team. **Không được cắt** |
+| T-008 | **Eval harness** | D3 | P0 | `.venv/Scripts/python.exe -m eval.run_eval` in bảng: intent accuracy · recall@3 · p95 TTFT · token/lượt · số ca lộ PII | 80 câu intent + 30 câu RAG + 20 prompt red-team. **Không được cắt** |
 | T-009 | Vertical slice + **deploy sớm** | D4–D5 | P0 | Login JWT → WS stream → `fare.inquiry` qua RAG → ghi log, chạy được **trên Vercel + Render**, không phải localhost | Deploy là rủi ro lớn nhất → phải nổ ở D5, không để cuối sprint |
 | T-004 | LangGraph state & router | D6–D8 | P0 | Router 1 lần gọi LLM ra `{intent, confidence, slots}`; rẽ nhánh đúng 10 nhãn; slot-filling hỏi lại khi thiếu | Đo lại bằng T-008 sau khi xong |
 | T-010 | Guardrail PII + fallback | D6–D8 | P0 | PII token hoá **trước khi** vào context; red-team 20 prompt → 0 ca lộ; tắt DB/LLM → agent xin lỗi, không văng stacktrace | ADR-004, ADR-001. **Không được cắt** |
@@ -78,6 +78,8 @@
 |---|---|---|---|
 | T-001 | Xây dựng bộ tài liệu tri thức RAG (7 file) | 2026-08-25 | JOURNAL `[2026-08-25]` — 7 file trong `data/knowledge_base/`, số liệu đối soát từ nguồn công bố |
 | T-007 | D1: Đóng băng đặc tả, intent taxonomy & 7 ADR | 2026-08-25 | JOURNAL `[2026-08-25]` — PRD, intent-taxonomy, ADR-001…007, architecture, glossary, codemap, DoD |
+| T-002 | Schema PostgreSQL + seed data | 2026-08-26 | JOURNAL `[2026-08-26]` — **14 bảng** (nhiều hơn 12 dự kiến) đã áp lên Neon; 311 chuyến + 11 case khó; 4 truy vấn kiểm chứng đã chạy thật |
+| T-003 | Tool contracts (Pydantic) | 2026-08-26 | JOURNAL `[2026-08-26]` — 8 tool, 5 ghi / 3 đọc, error taxonomy 3 nhánh, 11 test pass, ruff sạch |
 
 ---
 
