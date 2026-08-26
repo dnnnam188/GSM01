@@ -46,16 +46,7 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-- **T-006** — Frontend Next.js · `P0` · _Chờ kiểm chứng trực quan_
-  - **Đã làm tới đâu**: Đủ chức năng và `npm run build` sạch (có kiểm kiểu TypeScript).
-    Chat xử lý `token`/`tool`/`awaiting_human`/`hitl_result`, có skeleton và trạng thái rỗng.
-    Dashboard có hàng đợi duyệt, nút Duyệt/Từ chối (bắt buộc lý do), transcript + tool trace,
-    hàng chỉ số. Hệ thống thiết kế theo `ui-ux-guide.md` + `minimalist-skill`.
-  - **Vì sao chưa ✅**: chưa mở trang quan sát bằng mắt, chưa đo ở 375/768/1280px —
-    DoD mục 1 và mục 2 yêu cầu. **Người dùng đã quyết định chấp nhận trạng thái này**:
-    giao diện không phải trọng tâm chấm điểm, ưu tiên dồn cho độ tin cậy chức năng lõi.
-  - **Điều kiện để ✅**: người dùng tự mở xem và xác nhận, hoặc chạy kiểm trực quan sau khi
-    các task còn lại xong.
+*Trống.*
 
 ---
 
@@ -71,6 +62,7 @@
 
 | ID | Task | Ngày xong | Ghi chú / Link JOURNAL |
 |---|---|---|---|
+| T-006 | Frontend Next.js (chat khách + dashboard CSKH) | 2026-08-27 | **Người dùng tự xem và nghiệm thu**, không phải qua kiểm trực quan của agent — "frontend cơ bản vậy là được, đơn giản dễ hiểu". `npm run build` sạch, đã chạy thật trên Vercel |
 | T-015 | Thu thập CSAT cuối phiên (F16) | 2026-08-27 | JOURNAL `[2026-08-27] D12` — hỏi 1–5 sau 2 lượt trả lời; 13 test, trọng tâm là **không chấm được lên phiên của người khác**; chạy thật qua WebSocket → dashboard nhích 4,25 → 4,4 |
 | T-014 | Dashboard thống kê (F13) & cảnh báo hạn mức (F14) | 2026-08-26 | JOURNAL `[2026-08-26] D11` — 4 chỉ số + 2 biểu đồ, **10 test đối soát lại từng số bằng truy vấn độc lập**; bơm vượt ngưỡng qua HTTP: OK→DANGER→OK; mốc ngày sửa về giờ VN |
 | T-001 | Xây dựng bộ tài liệu tri thức RAG (7 file) | 2026-08-25 | JOURNAL `[2026-08-25]` — 7 file trong `data/knowledge_base/`, số liệu đối soát từ nguồn công bố |
