@@ -144,7 +144,10 @@ CREATE TABLE IF NOT EXISTS messages (
                           'complaint.lost_item', 'policy.faq', 'other')),
     intent_confidence NUMERIC(4,3),
     model_name        TEXT,
-    provider          TEXT        CHECK (provider IN ('gemini', 'openrouter')),
+    -- KHÔNG ràng buộc danh sách provider: tên provider dự phòng do biến môi
+    -- trường FALLBACK_PROVIDER_NAME quyết định (OpenRouter, AgentRouter, ...).
+    -- Ràng buộc cứng ở đây từng khiến việc đổi provider làm vỡ bước ghi tin nhắn.
+    provider          TEXT,
     prompt_tokens     INTEGER,
     completion_tokens INTEGER,
     ttft_ms           INTEGER,

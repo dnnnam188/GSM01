@@ -69,6 +69,8 @@ RANH GIỚI DỄ NHẦM:
 - "huỷ rồi mà vẫn bị trừ tiền"      -> refund.request (KHÔNG phải booking.cancel)
 - "cho tôi huỷ chuyến"              -> booking.cancel
 - "phí huỷ bao nhiêu tiền?"         -> fare.inquiry (hỏi con số)
+- "phí huỷ với xe taxi bao nhiêu?"  -> fare.inquiry (nêu thêm loại xe KHÔNG biến nó
+  thành câu hỏi quy định; hễ câu có chữ "bao nhiêu tiền / giá / mức phí" thì là fare.inquiry)
 - "khi nào được huỷ miễn phí?"      -> policy.faq (hỏi điều kiện)
 - "chuyến hôm qua hết bao nhiêu?"   -> trip.lookup (chuyến đã tồn tại trong hệ thống)
 - "từ A về B hết bao nhiêu?"        -> fare.inquiry (chuyến chưa tồn tại)
@@ -143,7 +145,7 @@ def route(message: str, history: list[dict] | None = None,
     return RouteResult(
         intent=intent,
         confidence=confidence,
-        slots={k: v for k, v in (data.get("slots") or {}).items() if v not in (None, "")},
+        slots={k: v for k, v in (data.get("slots") or {}).items() if v not in (None, "", 0)},
         missing_slots=list(data.get("missing_slots") or []),
         standalone_query=(data.get("standalone_query") or "").strip() or message,
         needs_clarification=confidence < CONFIDENCE_FLOOR,
