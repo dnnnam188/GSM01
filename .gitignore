@@ -73,3 +73,6 @@ logs/
 *.log
 *.tmp
 *.bak
+
+# Báo cáo eval sinh tự động
+eval/reports/

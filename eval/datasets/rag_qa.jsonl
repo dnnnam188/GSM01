@@ -1,0 +1,30 @@
+{"id": "R001", "question": "Giá mở cửa 2km đầu của Xanh SM Bike là bao nhiêu?", "expected_source": "01_pricing_and_surcharges.md"}
+{"id": "R002", "question": "Từ km thứ 3 trở đi GreenCar tính bao nhiêu một km?", "expected_source": "01_pricing_and_surcharges.md"}
+{"id": "R003", "question": "Phụ phí ban đêm từ 22h đến 6h là bao nhiêu?", "expected_source": "01_pricing_and_surcharges.md"}
+{"id": "R004", "question": "Phí chờ quá giờ tính thế nào?", "expected_source": "01_pricing_and_surcharges.md"}
+{"id": "R005", "question": "Thêm một điểm dừng trung gian mất thêm bao nhiêu tiền?", "expected_source": "01_pricing_and_surcharges.md"}
+{"id": "R006", "question": "Xanh SM Luxury VF 8 giá cước tiêu chuẩn mỗi km là bao nhiêu?", "expected_source": "01_pricing_and_surcharges.md"}
+{"id": "R007", "question": "Tôi được hủy chuyến miễn phí trong bao lâu?", "expected_source": "02_cancellation_and_fees.md"}
+{"id": "R008", "question": "Mức phí phạt hủy chuyến với Xanh SM Taxi là bao nhiêu?", "expected_source": "02_cancellation_and_fees.md"}
+{"id": "R009", "question": "Phí khách không xuất hiện với xe Luxury là bao nhiêu?", "expected_source": "02_cancellation_and_fees.md"}
+{"id": "R010", "question": "Tài xế phải đợi khách bao lâu trước khi được hủy vì khách không xuất hiện?", "expected_source": "02_cancellation_and_fees.md"}
+{"id": "R011", "question": "Nếu tài xế tự ý hủy chuyến vô lý thì khách được đền bù gì?", "expected_source": "02_cancellation_and_fees.md"}
+{"id": "R012", "question": "Số tiền hoàn tối đa mà AI được tự động duyệt là bao nhiêu?", "expected_source": "03_refund_and_compensation.md"}
+{"id": "R013", "question": "Trường hợp nào bắt buộc phải chuyển cho nhân viên CSKH duyệt?", "expected_source": "03_refund_and_compensation.md"}
+{"id": "R014", "question": "Quãng đường thực tế vượt bao nhiêu phần trăm thì được coi là tài xế đi vòng?", "expected_source": "03_refund_and_compensation.md"}
+{"id": "R015", "question": "Hoàn tiền về thẻ tín dụng quốc tế mất bao lâu?", "expected_source": "03_refund_and_compensation.md"}
+{"id": "R016", "question": "Mỗi tháng một tài khoản được auto-refund tối đa mấy lần?", "expected_source": "03_refund_and_compensation.md"}
+{"id": "R017", "question": "Tôi để quên đồ trên xe thì quy trình tìm lại thế nào?", "expected_source": "04_lost_and_found_policy.md"}
+{"id": "R018", "question": "Hệ thống có cho tôi biết số điện thoại tài xế để tự liên hệ không?", "expected_source": "04_lost_and_found_policy.md"}
+{"id": "R019", "question": "Đồ thất lạc được giữ trong bao lâu?", "expected_source": "04_lost_and_found_policy.md"}
+{"id": "R020", "question": "Ai chịu chi phí vận chuyển khi trả lại đồ bỏ quên?", "expected_source": "04_lost_and_found_policy.md"}
+{"id": "R021", "question": "Tiêu chuẩn phục vụ 5 sao của tài xế Xanh SM gồm những gì?", "expected_source": "05_driver_conduct_and_safety.md"}
+{"id": "R022", "question": "Khiếu nại tài xế được chia làm mấy cấp độ xử lý?", "expected_source": "05_driver_conduct_and_safety.md"}
+{"id": "R023", "question": "Tài xế hút thuốc trong xe bị xử lý thế nào?", "expected_source": "05_driver_conduct_and_safety.md"}
+{"id": "R024", "question": "Hành vi nào của tài xế bị coi là nghiêm trọng nhất?", "expected_source": "05_driver_conduct_and_safety.md"}
+{"id": "R025", "question": "Tôi có được mang thú cưng lên xe Xanh SM không?", "expected_source": "06_general_faq_and_features.md"}
+{"id": "R026", "question": "Làm sao để đặt xe hộ người khác?", "expected_source": "06_general_faq_and_features.md"}
+{"id": "R027", "question": "Tôi muốn xuất hóa đơn VAT điện tử thì làm thế nào?", "expected_source": "06_general_faq_and_features.md"}
+{"id": "R028", "question": "Xanh SM bảo mật dữ liệu hành trình của khách ra sao?", "expected_source": "07_pii_and_privacy_policy.md"}
+{"id": "R029", "question": "Số điện thoại khách hàng được hiển thị thế nào trong hệ thống?", "expected_source": "07_pii_and_privacy_policy.md"}
+{"id": "R030", "question": "Nhân viên CSKH được phép xem những thông tin cá nhân nào của khách?", "expected_source": "07_pii_and_privacy_policy.md"}

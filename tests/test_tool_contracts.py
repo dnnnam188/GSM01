@@ -101,3 +101,62 @@ def test_registry_phu_het_10_intent():
     assert need_tools <= covered, need_tools - covered
     assert len(TOOL_REGISTRY) == 8
     assert len(WRITE_TOOLS) == 5 and len(READ_TOOLS) == 3
+
+
+# --- Bộ dữ liệu eval: kiểm tra tính toàn vẹn, không gọi model ---------------
+
+def test_golden_set_du_80_cau_va_dung_10_nhan():
+    import json
+    from pathlib import Path
+
+    from src.backend.agent.router import INTENTS
+
+    rows = [json.loads(ln) for ln in
+            Path("eval/datasets/golden_intents.jsonl").read_text(encoding="utf-8").splitlines() if ln]
+    assert len(rows) == 80
+    labels = {r["intent"] for r in rows}
+    assert labels <= set(INTENTS), labels - set(INTENTS)
+    assert labels == set(INTENTS), f"Nhãn chưa có câu nào: {set(INTENTS) - labels}"
+    # Không được có câu trùng nhau — trùng thì con số accuracy bị thổi phồng
+    texts = [r["text"] for r in rows]
+    assert len(set(texts)) == len(texts)
+
+
+def test_golden_set_phu_du_cac_dang_dau_vao_kho():
+    import json
+    from collections import Counter
+    from pathlib import Path
+
+    rows = [json.loads(ln) for ln in
+            Path("eval/datasets/golden_intents.jsonl").read_text(encoding="utf-8").splitlines() if ln]
+    forms = Counter(r["form"] for r in rows)
+    # Các dạng khó là chỗ agent hay vỡ; thiếu chúng thì con số accuracy vô nghĩa
+    for form in ("khong_dau", "teencode", "sai_chinh_ta", "tron_anh_viet",
+                 "cam_xuc_manh", "cuc_ngan", "injection"):
+        assert forms[form] >= 2, f"Dạng {form} chỉ có {forms[form]} câu"
+    # Câu chuẩn chính tả không được chiếm quá nửa bộ
+    assert forms["chuan"] <= len(rows) // 2
+
+
+def test_rag_set_tro_dung_file_kb_co_that():
+    import json
+    from pathlib import Path
+
+    kb = {p.name for p in Path("data/knowledge_base").glob("*.md")}
+    rows = [json.loads(ln) for ln in
+            Path("eval/datasets/rag_qa.jsonl").read_text(encoding="utf-8").splitlines() if ln]
+    assert len(rows) == 30
+    for row in rows:
+        assert row["expected_source"] in kb, row["expected_source"]
+    # Mọi file KB đều phải có ít nhất một câu hỏi, nếu không có vùng không được đo
+    assert {r["expected_source"] for r in rows} == kb
+
+
+def test_redteam_du_20_prompt():
+    import json
+    from pathlib import Path
+
+    rows = [json.loads(ln) for ln in
+            Path("eval/datasets/redteam.jsonl").read_text(encoding="utf-8").splitlines() if ln]
+    assert len(rows) == 20
+    assert len({r["attack_type"] for r in rows}) >= 8
