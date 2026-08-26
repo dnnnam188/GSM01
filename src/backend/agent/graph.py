@@ -23,7 +23,9 @@ import time
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
+from src.backend.agent.checkpointer import get_checkpointer
 from src.backend.agent.router import route
 from src.backend.db import repository as repo
 from src.backend.llm.client import LLMClient
@@ -54,6 +56,7 @@ class AgentState(TypedDict, total=False):
     answer_prompt: str
     degraded: bool
     pending_hitl: dict[str, Any] | None
+    hitl_resolved: dict[str, Any] | None
 
 
 # Intent nào cần mã chuyến mới làm được việc
@@ -76,6 +79,10 @@ QUY TẮC BẮT BUỘC:
   Tuyệt đối không nói thao tác đã thành công.
 - Nếu yêu cầu hoàn tiền đang chờ nhân viên duyệt, nói rõ là đã chuyển bộ phận phụ trách
   và nêu thời gian phản hồi dự kiến. Không hứa chắc là sẽ được duyệt.
+- Nếu có `hitl_decision`: đó là quyết định CUỐI CÙNG của nhân viên phụ trách.
+  `approved` = true  -> báo tin đã được duyệt, nêu số tiền và mã yêu cầu hoàn tiền.
+  `approved` = false -> báo đã không được duyệt, nói lại lý do bằng lời dễ hiểu,
+  và mời khách cung cấp thêm bằng chứng nếu chưa thoả đáng. Không đổ lỗi cho khách.
 - Nếu `refund_eligibility` báo không đủ điều kiện, hãy giải thích NHẸ NHÀNG và NÊU RÕ CĂN CỨ
   đối soát, rồi mời khách cung cấp thêm bằng chứng nếu vẫn thấy chưa thoả đáng.
   Không tạo cảm giác đổ lỗi cho khách."""
@@ -219,13 +226,46 @@ def tool_node(state: AgentState) -> dict[str, Any]:
             "severity": "HIGH" if intent == "complaint.lost_item" else "NORMAL",
         })
 
-    # Yêu cầu hoàn tiền vượt ngưỡng — T-011 sẽ biến chỗ này thành interrupt() thật
     pending = next(
         (c for c in calls
          if c["tool"] == "request_refund" and c["ok"]
          and c["data"] and c["data"].get("status") == "PENDING_HITL"),
         None)
-    return {"tool_results": calls, "pending_hitl": pending["data"] if pending else None}
+
+    if pending:
+        # DỪNG THẬT. `interrupt()` ném ra ngoài, LangGraph ghi toàn bộ state xuống
+        # checkpoint Postgres rồi trả về cho nơi gọi. Khi CSKH quyết định, graph
+        # chạy lại node này và `interrupt()` trả về quyết định thay vì ném.
+        #
+        # Node chạy lại từ đầu nghĩa là các lời gọi tool phía trên cũng chạy lại —
+        # và đây đúng là chỗ ADR-005 trả công: `request_refund` trùng
+        # `idempotency_key` nên trả kết quả cũ với `replayed=True`, KHÔNG tạo
+        # yêu cầu hoàn tiền thứ hai.
+        decision = interrupt({
+            "type": "refund_approval",
+            "refund_code": pending["data"]["refund_code"],
+            "amount": pending["data"]["amount"],
+            "threshold_applied": pending["data"]["threshold_applied"],
+            "escalation_reason": pending["data"].get("escalation_reason"),
+            "customer_id": state["customer_id"],
+            "conversation_id": conv,
+            "customer_message": state["message"][:500],
+        })
+        calls.append({
+            "tool": "hitl_decision", "ok": True, "replayed": False,
+            "data": {
+                "refund_code": pending["data"]["refund_code"],
+                "amount": pending["data"]["amount"],
+                "approved": bool(decision.get("approved")),
+                "decision_reason": decision.get("reason"),
+                "decided_by_email": decision.get("agent_email"),
+            },
+            "error": None,
+        })
+        return {"tool_results": calls, "pending_hitl": None,
+                "hitl_resolved": calls[-1]["data"]}
+
+    return {"tool_results": calls, "pending_hitl": None}
 
 
 def clarify_node(state: AgentState) -> dict[str, Any]:
@@ -305,7 +345,7 @@ def after_retrieve(state: AgentState) -> str:
     return "tools" if state["intent"] != "policy.faq" else "answer"
 
 
-def build_graph() -> Any:
+def build_graph(checkpointer: Any = None) -> Any:
     graph = StateGraph(AgentState)
     graph.add_node("route", route_node)
     graph.add_node("retrieve", retrieve_node)
@@ -322,24 +362,55 @@ def build_graph() -> Any:
     graph.add_edge("tools", "answer")
     graph.add_edge("clarify", END)
     graph.add_edge("answer", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 _COMPILED: Any = None
 
 
-def get_graph() -> Any:
+async def get_graph() -> Any:
+    """Graph biên dịch một lần, gắn checkpointer Postgres (ADR-003)."""
     global _COMPILED
     if _COMPILED is None:
-        _COMPILED = build_graph()
+        _COMPILED = build_graph(await get_checkpointer())
     return _COMPILED
+
+
+def _thread_config(conversation_id: str) -> dict[str, Any]:
+    return {"configurable": {"thread_id": conversation_id}}
 
 
 async def run_graph(customer_id: str, conversation_id: str, message: str,
                     history: list[dict[str, Any]]) -> AgentState:
-    """Chạy graph tới khi dựng xong prompt trả lời (hoặc câu hỏi làm rõ)."""
+    """Chạy graph tới khi dựng xong prompt trả lời, câu hỏi làm rõ, hoặc điểm dừng HITL.
+
+    Nếu graph dừng ở `interrupt()`, kết quả trả về mang khoá `__interrupt__` và
+    KHÔNG có `answer_prompt`. Nơi gọi phải kiểm tra bằng `interrupt_payload()`.
+    """
     state: AgentState = {
         "customer_id": customer_id, "conversation_id": conversation_id,
         "message": message, "history": history, "tool_results": [],
     }
-    return await get_graph().ainvoke(state)
+    graph = await get_graph()
+    return await graph.ainvoke(state, config=_thread_config(conversation_id))
+
+
+async def resume_graph(conversation_id: str, decision: dict[str, Any]) -> AgentState:
+    """Đánh thức graph đang treo ở `interrupt()` bằng quyết định của CSKH."""
+    from langgraph.types import Command
+
+    graph = await get_graph()
+    return await graph.ainvoke(Command(resume=decision),
+                               config=_thread_config(conversation_id))
+
+
+def interrupt_payload(state: Any) -> dict[str, Any] | None:
+    """Lấy nội dung điểm dừng, nếu graph đang treo."""
+    if not isinstance(state, dict):
+        return None
+    interrupts = state.get("__interrupt__")
+    if not interrupts:
+        return None
+    first = interrupts[0]
+    value = getattr(first, "value", first)
+    return value if isinstance(value, dict) else {"raw": value}

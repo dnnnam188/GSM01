@@ -16,15 +16,30 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from src.backend.agent.graph import ANSWER_SYSTEM, run_graph
+from src.backend.agent.graph import ANSWER_SYSTEM, interrupt_payload, run_graph
 from src.backend.db import repository as repo
 from src.backend.llm.client import LLMClient, LLMError
 from src.backend.pii.detector import mask_text
+from src.backend.pii.tokenizer import StreamMasker, get_vault
 
 FALLBACK_ANSWER = (
     "Dạ em xin lỗi, hệ thống đang bận nên em chưa tra cứu được ngay lúc này. "
     "Anh/chị vui lòng thử lại sau ít phút, hoặc để em chuyển yêu cầu tới nhân viên hỗ trợ ạ."
 )
+
+
+def _escalated_message(payload: dict[str, Any]) -> str:
+    """Câu báo cho khách khi yêu cầu vượt thẩm quyền của agent.
+
+    Cố ý KHÔNG hứa là sẽ được duyệt — mới chỉ chuyển tới người có thẩm quyền.
+    """
+    amount = f"{payload.get('amount', 0):,}".replace(",", ".")
+    return (
+        f"Dạ, yêu cầu hoàn tiền {amount} VNĐ của anh/chị vượt hạn mức em được phép tự xử lý, "
+        f"nên em đã chuyển tới bộ phận phụ trách để kiểm tra và đối soát ạ "
+        f"(mã yêu cầu {payload.get('refund_code')}). "
+        f"Em sẽ báo lại anh/chị ngay tại đây khi có kết quả, trong vòng tối đa 04 giờ làm việc."
+    )
 
 
 async def _persist(conversation_id: str, text: str, **kwargs: Any) -> None:
@@ -63,6 +78,21 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
     yield {"type": "intent", "value": intent,
            "confidence": round(state.get("confidence", 0.0), 2)}
 
+    # --- Graph dừng lại chờ người duyệt (ADR-003) -------------------------
+    escalation = interrupt_payload(state)
+    if escalation:
+        message_out = _escalated_message(escalation)
+        await asyncio.to_thread(repo.set_conversation_status, conversation_id, "WAITING_HUMAN")
+        await _persist(conversation_id, message_out, intent=intent,
+                       intent_confidence=state.get("confidence"),
+                       latency_ms=int((time.perf_counter() - turn_started) * 1000))
+        yield {"type": "token", "value": message_out}
+        yield {"type": "done", "intent": intent, "awaiting_human": True,
+               "pending_hitl": escalation,
+               "latency_ms": int((time.perf_counter() - turn_started) * 1000),
+               "degraded": False}
+        return
+
     for call in state.get("tool_results") or []:
         yield {"type": "tool", "name": call["tool"], "ok": call["ok"],
                "replayed": call["replayed"],
@@ -82,6 +112,10 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
 
     # --- Stream câu trả lời -----------------------------------------------
     yield {"type": "status", "value": "Đang soạn câu trả lời"}
+    # Che ngay trên luồng, không đợi tới cuối: thứ khách nhìn thấy là thứ được
+    # đẩy ra từng mảnh, nên che sau vòng lặp thì chỉ sạch trong DB mà bẩn trên
+    # màn hình. StreamMasker giữ lại phần đuôi có thể là placeholder dở dang.
+    masker = StreamMasker(get_vault(conversation_id))
     collected: list[str] = []
     ttft_ms: int | None = None
     usage: dict[str, Any] = {}
@@ -94,7 +128,9 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
             if first_ms is not None:
                 ttft_ms = first_ms
             collected.append(delta)
-            yield {"type": "token", "value": delta}
+            visible = masker.feed(delta)
+            if visible:
+                yield {"type": "token", "value": visible}
     except LLMError as exc:
         await asyncio.to_thread(
             repo.log_tool_call, conversation_id, "generate_answer",
@@ -107,7 +143,16 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
             yield {"type": "done", "intent": intent, "degraded": True}
             return
 
-    answer = mask_text("".join(collected))  # lưới an toàn lớp hai (ADR-004)
+    tail = masker.flush()
+    if tail:
+        yield {"type": "token", "value": tail}
+
+    # Hai lớp, theo đúng thứ tự của ADR-004:
+    #   1. Placeholder còn sót -> dạng che thân thiện (0912****78). Đây là lớp
+    #      CHÍNH: LLM chưa từng thấy giá trị thật nên không thể đọc ra.
+    #   2. Regex quét số/địa chỉ lọt lưới. Lớp DỰ PHÒNG, không được tin cậy một mình.
+    answer = get_vault(conversation_id).mask_for_display("".join(collected))
+    answer = mask_text(answer)
     await _persist(
         conversation_id, answer, intent=intent,
         intent_confidence=state.get("confidence"),
@@ -116,10 +161,6 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
         prompt_tokens=usage.get("prompt_tokens"),
         completion_tokens=usage.get("completion_tokens"),
         ttft_ms=ttft_ms, latency_ms=int((time.perf_counter() - turn_started) * 1000))
-
-    pending = state.get("pending_hitl")
-    if pending:
-        await asyncio.to_thread(repo.set_conversation_status, conversation_id, "WAITING_HUMAN")
 
     yield {
         "type": "done",
@@ -131,6 +172,6 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
         "provider": usage.get("provider", "gemini"),
-        "pending_hitl": pending,
+        "hitl_resolved": state.get("hitl_resolved"),
         "degraded": bool(state.get("degraded")),
     }

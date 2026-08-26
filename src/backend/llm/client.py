@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import random
 import threading
 import time
@@ -30,6 +29,8 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from src.backend.config.env import env_int, env_str
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
@@ -38,22 +39,22 @@ GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 # OpenAI (`POST {base}/chat/completions`). OpenRouter, AgentRouter, hay bất kỳ
 # gateway nào cùng chuẩn đều dùng được mà KHÔNG phải sửa code — đổi provider chỉ
 # là đổi ba biến môi trường.
-FALLBACK_BASE_URL = os.getenv("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash-lite")
-FALLBACK_PROVIDER_NAME = os.getenv("FALLBACK_PROVIDER_NAME", "openrouter")
+FALLBACK_BASE_URL = env_str("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+FALLBACK_MODEL = env_str("FALLBACK_MODEL", "google/gemini-2.5-flash-lite")
+FALLBACK_PROVIDER_NAME = env_str("FALLBACK_PROVIDER_NAME", "openrouter")
 
 # Tham số riêng của từng provider, truyền dưới dạng JSON trong biến môi trường để
 # không phải sửa code mỗi lần đổi nhà cung cấp. Ví dụ với model dòng reasoning:
 #   FALLBACK_EXTRA_BODY={"reasoning_effort":"low"}
 try:
-    FALLBACK_EXTRA_BODY: dict[str, Any] = json.loads(os.getenv("FALLBACK_EXTRA_BODY", "{}"))
+    FALLBACK_EXTRA_BODY: dict[str, Any] = json.loads(env_str("FALLBACK_EXTRA_BODY", "{}"))
 except json.JSONDecodeError:
     FALLBACK_EXTRA_BODY = {}
 
 # Model dòng reasoning tiêu tốn `max_tokens` cho phần suy luận TRƯỚC khi phát ra
 # chữ nào. Đo trên qwen3.8: `max_tokens=300` cho ra 301 reasoning token và **0 ký
 # tự nội dung**. Sàn này bảo đảm phần suy luận không nuốt hết hạn mức.
-FALLBACK_MIN_MAX_TOKENS = int(os.getenv("FALLBACK_MIN_MAX_TOKENS", "0"))
+FALLBACK_MIN_MAX_TOKENS = env_int("FALLBACK_MIN_MAX_TOKENS", 0)
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
@@ -135,7 +136,7 @@ class _RateLimiter:
             await asyncio.sleep(wait)
 
 
-GEMINI_RPM = int(os.getenv("GEMINI_RPM", "15"))
+GEMINI_RPM = env_int("GEMINI_RPM", 15)
 _gemini_limiter = _RateLimiter(GEMINI_RPM)
 
 
@@ -173,17 +174,17 @@ class LLMResponse:
 
 @dataclass
 class LLMClient:
-    router_model: str = field(default_factory=lambda: os.getenv("LLM_ROUTER_MODEL", "gemini-3.5-flash-lite"))
-    answer_model: str = field(default_factory=lambda: os.getenv("LLM_ANSWER_MODEL", "gemini-3.5-flash-lite"))
+    router_model: str = field(default_factory=lambda: env_str("LLM_ROUTER_MODEL", "gemini-3.5-flash-lite"))
+    answer_model: str = field(default_factory=lambda: env_str("LLM_ANSWER_MODEL", "gemini-3.5-flash-lite"))
     embedding_model: str = field(
-        default_factory=lambda: os.getenv("LLM_EMBEDDING_MODEL", "gemini-embedding-001"))
-    embedding_dim: int = field(default_factory=lambda: int(os.getenv("LLM_EMBEDDING_DIM", "768")))
+        default_factory=lambda: env_str("LLM_EMBEDDING_MODEL", "gemini-embedding-001"))
+    embedding_dim: int = field(default_factory=lambda: env_int("LLM_EMBEDDING_DIM", 768))
     timeout_s: float = 30.0
     max_attempts: int = 3
 
     def __post_init__(self) -> None:
-        self.gemini_key = os.getenv("GEMINI_API_KEY", "")
-        self.fallback_key = os.getenv("FALLBACK_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
+        self.gemini_key = env_str("GEMINI_API_KEY", "") or ""
+        self.fallback_key = env_str("FALLBACK_API_KEY") or env_str("OPENROUTER_API_KEY", "") or ""
         if not self.gemini_key:
             raise RuntimeError("Thiếu GEMINI_API_KEY trong .env")
         self._client = httpx.Client(timeout=self.timeout_s)

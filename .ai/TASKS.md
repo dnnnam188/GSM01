@@ -46,19 +46,13 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-- **T-009** — Vertical slice + deploy · `P0` · _Chờ người dùng một thao tác_
-  - **Đã kiểm chứng trên bản deploy thật** (`https://gsm01-api.onrender.com`): **25/28**.
-    Ba điểm hỏng đều là TTFT (4.156 ms / 3.609 ms) — nguyên nhân đã tìm ra và đã sửa ở cục bộ.
-  - **Còn lại**: trên dashboard Render đặt `LLM_ANSWER_MODEL=gemini-3.5-flash-lite` (ADR-010)
-    **,** `GEMINI_API_KEY` mới, `GEMINI_RPM=15` (ADR-012) **và** 5 biến `FALLBACK_*`
-    cho TokenRouter (ADR-011), deploy lại, rồi chạy:
-    `GSM_BASE=https://gsm01-api.onrender.com GSM_WS=wss://gsm01-api.onrender.com`
-    `.venv/Scripts/python.exe -m tests.test_e2e_slice` — cần 28/28 để đóng task.
-    Ở cục bộ với model mới đã đạt **28/28, TTFT xấu nhất 1.370 ms**.
-
-- **T-004** — LangGraph + 8 tool thật · `P0` · _Người cầm: Claude Code_
-  - Graph + 8 tool đã chạy; 33 test pass; 26/26 kịch bản nghiệp vụ.
-  - **Bước tiếp theo**: T-010 (token hoá PII 5/20 → 0/20) rồi T-011 (HITL `interrupt()`).
+- *(Trống)*
+- **Việc kế tiếp**: **T-006 — Frontend Next.js** (D9–D11). Backend đã đủ endpoint:
+  `/api/hitl/queue`, `/api/hitl/{code}/decide`, `/api/conversations/{id}/transcript`,
+  `/api/dashboard/summary`, và WebSocket đẩy sự kiện `hitl_result` về phiên khách.
+  Giao diện hiện mới là bản rút gọn từ T-009.
+- **Việc người dùng cần làm**: merge `feature/langgraph-agent-tools` vào `main` để bản
+  Render có LangGraph, PII và HITL. Hiện production vẫn chạy code trước T-004.
 
 ---
 
@@ -66,10 +60,6 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| ~~T-004~~ | ~~LangGraph state & tool thật~~ · đang ở mục ⏳ | D6–D8 | P0 | Thay ruột `pipeline.run_turn()` bằng graph; **nối 8 tool thật** (hiện chưa tool nào chạy được); slot-filling hỏi lại khi thiếu | Router + hợp đồng sự kiện đã có, giữ nguyên. Đo lại bằng T-008 |
-| T-010 | Guardrail PII + fallback | D6–D8 | P0 | Đưa số ca lộ PII từ **5/20 (raw) và 2/20 (masked) về 0/20** bằng token hoá trước khi vào context; tắt DB/LLM → agent xin lỗi, không văng stacktrace | ADR-004. Đã đo baseline ở D3, xem JOURNAL. **Không được cắt** |
-| T-011 | **HITL duyệt hoàn tiền** | D7–D8 | P0 | Hoàn > ngưỡng → `interrupt()`; CSKH duyệt → graph resume → khách nhận thông báo trên đúng phiên cũ | ADR-003. **Không được cắt** |
-| T-005 | Backend API cho dashboard | D9 | P0 | Endpoint hàng đợi HITL, transcript + tool trace, duyệt/từ chối (từ chối bắt buộc có lý do), thống kê | Phân quyền: `customer` gọi → 403 |
 | T-006 | Frontend Next.js | D9–D11 | P0 | Chat khách (stream, trạng thái chờ duyệt) + Dashboard CSKH (hàng đợi, tool trace, nút duyệt) | Kiểm ở 375px / 768px / 1280px |
 | T-012 | Đo lại, tối ưu, chaos test | D12 | P0 | Chạy T-008 lần cuối đạt cả 3 ngưỡng; test tắt LLM/DB/tool xem fallback | Nếu intent < 90% → chữa theo `intent-taxonomy.md` mục 4. **Bổ sung eval đa lượt + faithfulness** — xem bug-history 2026-08-26 |
 | T-013 | Đóng gói & demo | D13 | P1 | README có sơ đồ kiến trúc, video demo, kịch bản 5 phút chạy trọn luồng HITL | Ngày này cũng là đệm dự phòng |
@@ -86,6 +76,11 @@
 | T-007 | D1: Đóng băng đặc tả, intent taxonomy & 7 ADR | 2026-08-25 | JOURNAL `[2026-08-25]` — PRD, intent-taxonomy, ADR-001…007, architecture, glossary, codemap, DoD |
 | T-002 | Schema PostgreSQL + seed data | 2026-08-26 | JOURNAL `[2026-08-26]` — **14 bảng** (nhiều hơn 12 dự kiến) đã áp lên Neon; 311 chuyến + 11 case khó; 4 truy vấn kiểm chứng đã chạy thật |
 | T-003 | Tool contracts (Pydantic) | 2026-08-26 | JOURNAL `[2026-08-26]` — 8 tool, 5 ghi / 3 đọc, error taxonomy 3 nhánh, 11 test pass, ruff sạch |
+| T-011 | HITL duyệt hoàn tiền bằng `interrupt()` + checkpointer Postgres | 2026-08-26 | JOURNAL `[2026-08-26] D8` — **26/26** kịch bản; graph dừng thật, resume đúng chỗ, khách nhận tin trên phiên đang mở |
+| T-005 | Backend API cho dashboard CSKH | 2026-08-26 | JOURNAL `[2026-08-26] D8` — hàng đợi HITL, duyệt/từ chối có ràng buộc lý do, transcript + tool trace, thống kê |
+| T-010 | Guardrail PII: token hoá trước khi vào context | 2026-08-26 | JOURNAL `[2026-08-26] D7` — **0/20 ca lộ** (từ 5/20 raw và 2/20 masked); 13 test; `StreamMasker` che ngay trên luồng |
+| T-009 | Vertical slice + deploy (JWT 2 vai trò, WebSocket, RAG, ghi vết) | 2026-08-26 | JOURNAL `[2026-08-26] D6e` — **28/28 trên bản deploy thật**, TTFT 945/1135 ms, `gemini-3.5-flash-lite` |
+| T-004 | LangGraph + 8 tool nghiệp vụ thật | 2026-08-26 | JOURNAL `[2026-08-26] D6` — graph 5 node, 8 tool, 26/26 kịch bản nghiệp vụ, 50 test pass |
 | T-008 | Eval harness (80 intent + 30 RAG + 20 red-team) | 2026-08-26 | JOURNAL `[2026-08-26] D3` — **intent 100% (80/80) · TTFT p95 1926ms · recall@3 100%** · PII baseline 5/20 lộ (mục tiêu T-010) |
 
 ---

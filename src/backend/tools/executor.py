@@ -8,6 +8,9 @@ Ba điều lớp này bảo đảm, không phụ thuộc vào việc LLM cư x�
    dung không thực thi lại — nó trả về kết quả đã lưu, kèm cờ `replayed=True`.
 3. **Ngưỡng nghiệp vụ đọc từ `business_config`** (ADR-006), không hardcode.
    LLM không được quyền quyết định có tự duyệt hoàn tiền hay không — tầng này quyết.
+4. **PII được token hoá trước khi rời khỏi lớp này** (ADR-004). Bảng `tool_calls`
+   vẫn lưu giá trị THẬT cho CSKH truy vết — họ có quyền xem; còn thứ trả về cho
+   graph, và từ đó đi vào context của LLM, chỉ chứa placeholder.
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ from pydantic import BaseModel, ValidationError
 
 from src.backend.db.connection import get_connection
 from src.backend.db.repository import get_business_config, log_tool_call
+from src.backend.pii.tokenizer import get_vault, tokenize_model
 from src.backend.tools.contracts import (
     TOOL_REGISTRY,
     BookRideInput,
@@ -307,7 +311,8 @@ def _request_refund(inp: RequestRefundInput, idem: str) -> RequestRefundOutput:
             "INSERT INTO refund_requests (refund_code, customer_id, ride_id, conversation_id, "
             "amount, reason_code, reason_detail, fraud_score, status, resume_thread_id, "
             "idempotency_key, decided_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            (refund_code, inp.customer_id, ride[0], None, inp.amount, inp.reason_code.value,
+            (refund_code, inp.customer_id, ride[0], inp.conversation_id, inp.amount,
+             inp.reason_code.value,
              inp.reason_detail, fraud_score, status, inp.conversation_id, idem,
              None if needs_human else now))
         cur.execute(
@@ -379,8 +384,12 @@ def execute_tool(tool_name: str, payload: dict[str, Any], *,
         idem = parsed.idempotency_key or parsed.build_idempotency_key(tool_name)
         cached = _replayed_result(idem)
         if cached is not None:
-            return ToolResult(ok=True, data=spec.output_model(**cached), replayed=True,
-                              latency_ms=int((time.perf_counter() - started) * 1000))
+            restored = spec.output_model(**cached)
+            return ToolResult(
+                ok=True,
+                data=tokenize_model(restored, get_vault(conversation_id)),
+                replayed=True,
+                latency_ms=int((time.perf_counter() - started) * 1000))
 
     # 3. Thực thi
     try:
@@ -404,9 +413,12 @@ def execute_tool(tool_name: str, payload: dict[str, Any], *,
         return ToolResult(ok=False, error=error)
 
     latency_ms = int((time.perf_counter() - started) * 1000)
+    # Ghi giá trị THẬT vào tool_calls: CSKH có quyền xem, và tool trace mất PII thì
+    # không xử lý được ca. Chỉ bản trả về cho graph mới bị token hoá.
     result_json = json.loads(output.model_dump_json())
     logged = log_tool_call(conversation_id, tool_name, payload, result=result_json,
                            idempotency_key=idem, latency_ms=latency_ms)
+    output = tokenize_model(output, get_vault(conversation_id))
     # `logged is None` nghĩa là ràng buộc UNIQUE ở DB vừa chặn một lời gọi trùng mà
     # bước kiểm ở trên chưa kịp thấy (hai lượt chạy song song). Vẫn coi là thành công,
     # nhưng đánh dấu replayed để tầng trên không báo với khách hai lần.

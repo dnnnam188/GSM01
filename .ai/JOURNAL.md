@@ -13,6 +13,188 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D8: HITL Bằng `interrupt()` — Graph Dừng Thật Rồi Chạy Tiếp (T-011, T-005)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-011 ✅, T-005 ✅
+
+### 📊 Kết quả
+`tests.test_hitl_flow` **26/26** · `pytest` **63/63** · `tests.test_e2e_slice` **28/28** · ruff sạch.
+
+### ✅ Trọn luồng đã kiểm chứng
+1. Khách: *"Chuyến XSM-DOUBLE-02 bị trừ tiền hai lần, hoàn lại tiền cho tôi"*
+2. Hệ thống đối soát → 120.000đ > ngưỡng 50.000đ → **graph dừng bằng `interrupt()`**,
+   state ghi vào bảng `checkpoints` của Postgres, hội thoại chuyển `WAITING_HUMAN`
+3. Khách nhận: *"vượt hạn mức em được phép tự xử lý, nên em đã chuyển tới bộ phận phụ trách"*
+   — cố ý **không hứa** là sẽ được duyệt
+4. CSKH thấy ca trong `/api/hitl/queue` kèm căn cứ đối soát
+5. CSKH bấm Duyệt → graph **chạy tiếp từ đúng chỗ dừng**
+6. Khách nhận kết quả **ngay trên phiên WebSocket đang mở**, server xác nhận đã đẩy
+
+Kèm các chốt chặn: từ chối không lý do → **400**, duyệt lần hai → **409**,
+`audit_log` ghi `HUMAN_AGENT` chứ không phải AI, khách gọi hàng đợi HITL → **403**.
+
+### 🔑 Ba điều học được, đều không đọc tài liệu mà ra
+**1. `interrupt()` chạy LẠI cả node từ đầu khi resume**, không tiếp tục từ giữa hàm.
+Nghĩa là mọi lời gọi tool phía trên chạy lại. Đây đúng là chỗ **ADR-005 trả công**:
+`request_refund` trùng `idempotency_key` nên trả kết quả cũ với `replayed=True`.
+Đã kiểm bằng `count(*) = 1` trên `refund_requests`. Không có idempotency thì **mỗi lần
+duyệt là một yêu cầu hoàn tiền mới** — mất tiền thật.
+
+**2. Thứ tự ghi-rồi-đánh-thức là bắt buộc.** Ghi quyết định xuống DB trước, resume graph sau.
+Đảo lại mà bước ghi hỏng thì khách đã nhận thông báo "được duyệt" trong khi hệ thống không
+có bản ghi nào — sai lệch đó không sửa được.
+
+**3. Trên Windows, `psycopg` async không chạy được trên `ProactorEventLoop`** mà uvicorn
+chọn mặc định. Mọi kết nối checkpointer hỏng với *"Psycopg cannot use the 'ProactorEventLoop'"*.
+Đặt policy trong `main.py` **không ăn** vì uvicorn tự dựng loop riêng. Phải có `run_dev.py`
+với `loop="none"` để tự dựng Selector loop. Linux không dính nên production không đổi gì.
+Cũng đã xác nhận `PostgresSaver` bản đồng bộ **không** hiện thực các phương thức async,
+nên không thể né bằng cách dùng bản sync.
+
+### 📁 File đã thay đổi
+- `src/backend/agent/checkpointer.py`, `src/backend/api/hub.py`, `run_dev.py` — **mới**
+- `src/backend/agent/graph.py` — `interrupt()`, `resume_graph()`, compile với checkpointer
+- `src/backend/agent/pipeline.py` — xử lý điểm dừng, báo khách bằng lời không hứa hẹn
+- `src/backend/main.py` — `/api/hitl/queue`, `/api/hitl/{code}/decide`, đăng ký hub
+- `src/backend/db/repository.py` — `hitl_queue()`, `decide_refund()`
+- `src/backend/tools/executor.py` — gắn refund vào `conversation_id`
+- `tests/test_hitl_flow.py` — **mới**, 26 phép kiểm
+- `.ai/context/decisions.md` (ADR-003), `codemap.md`, `docs/DEPLOY.md`
+
+### ⏳ Đang dở
+- Không. T-011 và T-005 đã thoả DoD.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Chưa merge vào `main`** — bản trên Render vẫn chạy code **trước T-004**, tức chưa có
+   LangGraph, chưa có token hoá PII, chưa có HITL. Cần merge để production có những thứ này.
+2. **Sổ kết nối WebSocket nằm trong bộ nhớ một tiến trình.** Nếu Render chạy nhiều worker thì
+   khách sẽ không nhận được kết quả duyệt. Giữ một worker, hoặc đổi `api/hub.py` sang pub/sub.
+   Câu trả lời vẫn được ghi vào `messages` nên khách offline không mất tin.
+3. Kho ánh xạ PII cũng nằm trong bộ nhớ (ghi từ D7) — cùng ràng buộc một-worker.
+
+### ➡️ Việc tiếp theo
+- **T-006** — giao diện đầy đủ: dashboard CSKH có hàng đợi duyệt, tool trace, nút Duyệt/Từ chối;
+  khung chat khách hiển thị trạng thái chờ duyệt và nhận sự kiện `hitl_result`.
+- **T-012** — đo lại toàn bộ, chaos test, bổ sung eval đa lượt + faithfulness.
+
+---
+
+## [2026-08-26] – D7: Token Hoá PII — Đưa Rò Rỉ Từ 5/20 Về 0/20 (T-010)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-010 ✅
+
+### 📊 Ba con số nghiệm thu
+| Tầng bảo vệ | Số ca lộ / 20 |
+|---|---|
+| Chỉ dặn trong system prompt (`raw`) | 5 |
+| Thêm lưới regex ở đầu ra (`masked`) | 2 |
+| **Token hoá trước khi vào context (`tokenized`)** | **0** ✅ |
+
+`pytest` **63/63** · `tests.test_e2e_slice` **28/28** · `ruff` sạch.
+
+### ✅ Đã làm được
+- **`pii/tokenizer.py`** — thay PII **theo trường đã biết**, không đoán theo mẫu. Dữ liệu ra
+  từ DB đi qua đúng các trường đã đánh dấu `pii_field()` từ D2, nên không bỏ sót; còn regex
+  thì mãi mãi không phân biệt được tên tài xế với chữ thường.
+- **Placeholder ổn định trong một hội thoại**: cùng số điện thoại luôn cho cùng
+  `<PHONE_C7>`, nên LLM vẫn suy luận được "hai chuyến này cùng một tài xế" mà không hề biết
+  người đó là ai. Hai hội thoại khác nhau thì placeholder khác nhau.
+- **Đệ quy xuống model lồng nhau và danh sách** — `GetRideHistoryOutput` chứa danh sách
+  chuyến, bỏ sót là lộ nguyên lịch sử đi lại.
+- **`tool_calls` vẫn lưu giá trị THẬT**: CSKH có quyền xem, và tool trace mất PII thì không
+  xử lý được ca. Chỉ nhánh đi vào context của LLM mới bị token hoá.
+- **Chế độ eval `tokenized` đi qua đúng đường của production** (`execute_tool`), không phải
+  bản mô phỏng — nên nếu ai đó lỡ bỏ token hoá ở một trường thì phép đo phát hiện ngay.
+
+### 🐞 Lỗi của chính tôi, bắt được nhờ nhìn màn hình khách
+Bản đầu chỉ che biến `answer` **sau** vòng lặp stream. Red-team đo ra 0/20, test xanh hết —
+nhưng khi tôi thử hỏi một câu thật thì khách nhìn thấy:
+
+```
+- Điểm đi: <ADDR_48>
+- Điểm đến: <ADDR_33>
+```
+
+DB thì sạch, màn hình thì bẩn. Vì token đẩy cho khách là bản thô, chỉ bản lưu mới được che.
+
+Che trên luồng khó hơn một bậc: model có thể phát `<ADDR` ở mảnh này và `_48>` ở mảnh sau.
+Đã viết `StreamMasker` giữ lại phần đuôi *có thể* là placeholder dở dang, chỉ đẩy ra phần
+chắc chắn an toàn. Kiểm cả trường hợp xấu nhất — mỗi mảnh đúng một ký tự.
+
+Sau khi sửa, khách thấy: `Điểm đi: 169 ***` — che được, vẫn đọc hiểu được, và **không lộ
+luôn cả cơ chế bên trong**.
+
+Bài học lặp lại lần thứ ba trong dự án: **bộ đo xanh không có nghĩa là sản phẩm đúng.**
+Lần một là RAG đa lượt trả sai số liệu, lần hai là `thinkingConfig` chết lặng, lần này là
+placeholder lọt ra giao diện. Cả ba đều chỉ lộ ra khi nhìn vào thứ người dùng thật sự thấy.
+
+### 📁 File đã thay đổi
+- `src/backend/pii/tokenizer.py` — **mới** (`PiiVault`, `tokenize_model`, `StreamMasker`)
+- `src/backend/tools/executor.py` — token hoá ở đúng ranh giới dữ liệu rời tầng tool
+- `src/backend/agent/pipeline.py` — che ngay trên luồng stream
+- `eval/run_eval.py` — thêm chế độ `tokenized`, đặt làm mặc định
+- `eval/README.md` — bảng ba chế độ và ý nghĩa của việc giữ cả ba
+- `tests/test_pii_tokenizer.py` — **mới**, 13 test
+- `.ai/context/decisions.md` — ADR-004 bổ sung kết quả đã kiểm chứng
+
+### ⏳ Đang dở
+- Không. T-010 đã thoả DoD.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Kho ánh xạ hiện nằm **trong bộ nhớ tiến trình**. Render free tier ngủ rồi khởi động lại
+  là mất kho: hội thoại cũ vẫn đọc được (placeholder mới sinh lại từ hash), nhưng
+  `detokenize` cho các placeholder cũ sẽ không khôi phục được. Chưa ảnh hưởng gì vì CSKH
+  đọc giá trị thật thẳng từ `tool_calls`. Nếu T-005 cần khôi phục theo placeholder thì phải
+  đẩy kho xuống DB.
+- Chưa deploy bản này lên Render.
+
+### ➡️ Việc tiếp theo
+- **T-011** — HITL bằng `interrupt()`: hoàn > ngưỡng thì graph **dừng thật**, CSKH duyệt
+  xong thì chạy tiếp từ đúng chỗ dừng. Chỗ móc đã sẵn trong `tool_node` và `resume_thread_id`.
+
+---
+
+## [2026-08-26] – D6e: Đóng T-009 — Nghiệm Thu Trên Bản Deploy Thật
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-009 ✅, T-004 ✅
+
+### 📊 Kết quả trên `https://gsm01-api.onrender.com`
+**28/28 phép kiểm đạt.** TTFT **945 ms** và **1.135 ms**, `model_name` trong DB xác nhận
+`gemini-3.5-flash-lite` (trước đó bản deploy còn chạy `gemini-3.5-flash` với TTFT 3.872 ms).
+
+Câu trả lời lượt 2 đúng số liệu: *"phí hủy chuyến Xanh SM Bike là 10.000 VNĐ"* — tức bản vá
+viết lại câu hỏi đa lượt (`standalone_query`) cũng hoạt động đúng trên môi trường thật.
+
+### ✅ Hai task đóng cùng lúc
+- **T-009** — đăng nhập 2 vai trò, phân quyền chặn ở server (khách gọi dashboard → 403),
+  WebSocket streaming, RAG, ghi `messages`/`tool_calls`, transcript + tool trace cho CSKH.
+- **T-004** — LangGraph 5 node, 8 tool nghiệp vụ thật, 26/26 kịch bản, 50 test pass.
+
+### 🐞 Sự cố deploy đã xử lý trong ngày
+`JWT_EXPIRE_MINUTES` trên Render mang giá trị `720` kèm một dấu backtick — dấu vết sao chép
+từ văn bản có định dạng mã. App chết ngay lúc khởi động với `ValueError` của `int()`, và
+thông báo lỗi **không hề nói biến nào sai**. Đã thêm `config/env.py` gột sạch ký tự rác và
+báo lỗi nêu đích danh tên biến, kèm 14 test — trong đó một test quét mã nguồn cấm
+`int(os.getenv(...))` để chặn tái diễn.
+
+### ⏳ Đang dở
+- Không. Mốc **M4 (vertical slice đã deploy)** và phần graph của **M5** đều xong.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- `PYTHON_VERSION` trên Render là **3.14.3** trong khi máy phát triển và `render.yaml` là
+  **3.13.7**. Chưa gây lỗi, nhưng làm câu "test xanh ở máy" yếu đi một bậc. Nên chỉnh cho khớp.
+- Chưa kiểm chứng được **đường lui trên môi trường deploy**: không có cách ép Gemini hỏng từ
+  bên ngoài. Đã chạy đúng ở cục bộ. Cân nhắc thêm mục cấu hình vào `/api/health`.
+
+### ➡️ Việc tiếp theo
+- **T-010** — token hoá PII, đưa **5/20 → 0/20**.
+- **T-011** — HITL bằng `interrupt()`.
+
+---
+
 ## [2026-08-26] – D6d: Chẩn Đoán Hạn Mức Gemini & Tự Giãn Nhịp (ADR-012)
 
 - **Agent / Người thực hiện**: Claude Code

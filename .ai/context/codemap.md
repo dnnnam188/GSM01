@@ -2,10 +2,11 @@
 
 > 🎯 **Mục đích**: Trả lời nhanh câu hỏi *"Muốn sửa X thì mở file nào?"* để Agent không phải quét cả repo.
 >
-> ⚠️ **TRẠNG THÁI (2026-08-26)**: chạy được đầu-cuối ở cục bộ — đăng nhập JWT, WebSocket
-> streaming, RAG, ghi vết, giao diện Next.js (T-002, T-003, T-008, T-009).
-> **Chưa có**: LangGraph (T-004), tool ghi dữ liệu, HITL (T-011), token hoá PII (T-010),
-> và **chưa deploy lên Render/Vercel** — cần tài khoản của người dùng.
+> ⚠️ **TRẠNG THÁI (2026-08-26)**: backend hoàn chỉnh về chức năng — LangGraph + 8 tool thật,
+> token hoá PII, HITL bằng `interrupt()` + checkpointer Postgres, đã deploy Render + Vercel
+> (T-002, T-003, T-004, T-008, T-009, T-010, T-011).
+> **Còn lại**: giao diện đầy đủ (T-006), dashboard thống kê (T-014), đo lại & đóng gói (T-012, T-013).
+> Bản trên Render đang chạy code **trước T-004** — nhánh `feature/langgraph-agent-tools` chưa merge.
 
 ## 1. Điểm Vào Của Dự Án (Entry Points)
 
@@ -18,7 +19,8 @@
 | Seed dữ liệu | `src/backend/db/seed.py` | ✅ Đã có |
 | Hợp đồng tool | `src/backend/tools/contracts.py` | ✅ Đã có |
 | Tài liệu schema | `docs/DATA-MODEL.md` | ✅ Đã có |
-| Backend | `src/backend/main.py` | ✅ `uvicorn src.backend.main:app --port 8000` |
+| Backend (Windows) | `run_dev.py` | ✅ `.venv/Scripts/python.exe run_dev.py` — **bắt buộc trên Windows**, xem ADR-003 |
+| Backend (Linux/Render) | `src/backend/main.py` | ✅ `uvicorn src.backend.main:app` |
 | Frontend | `src/frontend/` (Next.js 15) | ✅ `npm run dev` trong `src/frontend/` |
 | Cấu hình deploy | `render.yaml`, `requirements.txt`, `docs/DEPLOY.md` | ✅ Sẵn sàng, chưa bấm deploy |
 | Bộ eval | `eval/run_eval.py` | ✅ Đã có, chạy ra số thật |
@@ -57,6 +59,16 @@
 | Sinh idempotency key | `src/backend/tools/contracts.py` → `WriteToolInput.build_idempotency_key()` | Đổi cách sinh = mất tác dụng chống trùng (ADR-005) |
 | Nhãn trường PII | `src/backend/tools/contracts.py` → `pii_field()`, `pii_fields_of()` | Tokenizer ở T-010 đọc nhãn này |
 | Kết nối DB | `src/backend/db/connection.py` → `get_connection()` | Đọc `DATABASE_URL` từ `.env` |
+| **Điều phối agent** | `src/backend/agent/graph.py` → `tool_node()` | Ánh xạ intent→tool bằng luật, không để LLM tự chọn |
+| **Điểm dừng HITL** | `src/backend/agent/graph.py` → `interrupt()` trong `tool_node` | Resume chạy LẠI cả node; idempotency chặn trùng (ADR-005) |
+| Đánh thức graph | `src/backend/agent/graph.py` → `resume_graph()` | Khoá là `conversation_id` |
+| Checkpointer Postgres | `src/backend/agent/checkpointer.py` | Dùng `AsyncConnectionPool`, KHÔNG dùng `from_conn_string` |
+| **Thực thi 8 tool** | `src/backend/tools/executor.py` → `execute_tool()` | Điểm vào duy nhất; graph chỉ được gọi qua đây |
+| Suy ra quyền hoàn tiền | `src/backend/tools/executor.py` → `derive_refund_evidence()` | Số tiền từ bằng chứng, không từ lời khai (ADR-009) |
+| **Token hoá PII** | `src/backend/pii/tokenizer.py` → `tokenize_model()` | Thay theo trường `pii_field()`, không đoán theo mẫu |
+| Che PII trên luồng | `src/backend/pii/tokenizer.py` → `StreamMasker` | Che sau vòng lặp là DB sạch mà màn hình bẩn |
+| Hàng đợi + duyệt HITL | `src/backend/main.py` → `/api/hitl/queue`, `/api/hitl/{code}/decide` | Ghi DB trước, resume graph sau |
+| Đẩy tin về phiên khách | `src/backend/api/hub.py` → `hub.push()` | Trong bộ nhớ; nhiều worker thì phải đổi sang pub/sub |
 
 ## 3. Cấu Trúc Dự Kiến (chưa tồn tại — kế hoạch)
 
@@ -92,7 +104,9 @@ eval/
 | `src/backend/agent/router.py` | Prompt này quyết định con số nghiệm thu quan trọng nhất | Đổi một chữ cũng phải đo lại; đừng sửa "cho gọn" |
 | `src/backend/rag/indexer.py` | `TRUNCATE knowledge_chunks` mỗi lần chạy, và tốn hạn mức embed | Chỉ chạy lại khi kho tri thức thay đổi |
 | `src/backend/llm/client.py` → `astream()` | Chính sách thử lại **khác** `generate()`: 429 rơi thẳng sang OpenRouter, không thử lại. Thử lại 3 lần đẩy TTFT lên 12,5 giây | Đừng "thống nhất" hai chính sách này làm một |
-| `uvicorn` chạy không có `--reload` | Sửa code xong mà không khởi động lại thì test vẫn chạy code cũ — đã mất một vòng debug vì việc này | Dùng `--reload` khi đang phát triển |
+| `uvicorn` chạy không có `--reload` | Sửa code xong mà không khởi động lại thì test vẫn chạy code cũ — đã mất một vòng debug vì việc này | Dùng `run_dev.py`, và nhớ khởi động lại sau khi sửa |
+| `src/backend/agent/graph.py` → `tool_node` | `interrupt()` khiến node chạy LẠI TỪ ĐẦU khi resume | Mọi tool ghi trong node này phải có idempotency, nếu không mỗi lần duyệt là một bản ghi mới |
+| `src/backend/api/hub.py` | Sổ kết nối nằm trong bộ nhớ một tiến trình | Chạy nhiều worker là khách không nhận được kết quả duyệt |
 
 ## 5. Nơi KHÔNG Được Sửa Tay
 
