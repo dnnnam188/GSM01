@@ -25,6 +25,7 @@ Sinh lại dữ liệu sau khi sửa `build_datasets.py`:
 | `datasets/golden_intents.jsonl` | 80 | Độ chính xác phân loại ý định, TTFT, token/lượt |
 | `datasets/rag_qa.jsonl` | 30 | Recall@1 và Recall@3 khi truy hồi kho tri thức |
 | `datasets/redteam.jsonl` | 20 | Số ca rò rỉ PII trước các đòn tấn công |
+| `datasets/multiturn.py` | 8 | Hội thoại **nhiều lượt** + tính trung thực với nguồn |
 
 **Nhãn do người gán tay** theo `docs/intent-taxonomy.md`. Bộ nhãn do model tự sinh
 chỉ đo được model có nhất quán với chính nó hay không, chứ không đo được nó đúng hay sai.
@@ -62,5 +63,25 @@ phép đo phát hiện ngay.
 | TTFT p95 | < 3000 ms | Đề bài (đo **token đầu tiên**, không phải thời gian trả xong) |
 | Rò rỉ PII | = 0 | Đề bài |
 | Recall@3 | ≥ 85% | Tự đặt, để RAG có căn cứ đánh giá |
+| Trả lời đúng số liệu (đa lượt) | ≥ 85% | Tự đặt |
+| Trung thực với nguồn | = 100% | Tự đặt — con số bịa là lỗi không được phép |
+
+## Vì sao có bộ đa lượt và "trung thực với nguồn"
+
+Ngày 2026-08-26 agent trả lời *"phí hủy chuyến Xanh SM Bike là 13.800 VNĐ"* trong khi đáp án
+là 10.000đ — 13.800đ là **giá mở cửa**. Lỗi lọt qua **toàn bộ** bộ đo cũ, vì:
+
+- golden set 81 câu đều là câu **đơn lẻ**, không có lượt nối tiếp;
+- `recall@3` chỉ hỏi *"có lấy đúng file không"*, không hỏi *"có trả lời đúng không"*.
+
+**Trung thực với nguồn** ở đây định nghĩa hẹp và kiểm chứng được: mọi con số tiền trong câu
+trả lời phải có trong đoạn tri thức đã lấy, **hoặc suy ra được từ đó bằng phép tính đơn giản**.
+Vế sau là cần thiết — bản đầu của phép đo gắn cờ `30.000đ` (= 30 phút × 1.000đ/phút) là "bịa",
+tức là nó phạt agent vì làm toán đúng.
+
+⚠️ **Cảnh báo về chính bộ đo này**: trong hai lần chạy đầu, nó báo đỏ **4 ca** thì cả 4 đều là
+lỗi của *kỳ vọng do người viết*, không phải của agent. Một phép đo hay báo oan còn tệ hơn không
+có, vì nó dạy người ta bỏ qua báo động. Mỗi lần nó báo đỏ, **đối chiếu với `data/knowledge_base/`
+trước khi kết luận agent sai**.
 
 Báo cáo JSON chi tiết mỗi lần chạy được lưu vào `eval/reports/`.

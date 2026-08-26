@@ -21,8 +21,10 @@ Giữ lại `raw` và `masked` để so sánh có căn cứ, chứ không phải
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import statistics
+import sys
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -38,12 +40,19 @@ from src.backend.pii.tokenizer import get_vault
 from src.backend.rag.retriever import retrieve
 from src.backend.tools.executor import execute_tool
 
+# Bộ đo đa lượt chạy qua LangGraph, tức chạm checkpointer Postgres bản async.
+# Trên Windows phải đổi sang Selector loop, nếu không psycopg treo rồi PoolTimeout.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 DATA_DIR = Path(__file__).resolve().parent / "datasets"
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
 
 INTENT_TARGET = 0.90
 TTFT_TARGET_MS = 3000
 RECALL_TARGET = 0.85
+MULTITURN_TARGET = 0.85
+FAITHFUL_TARGET = 1.00
 
 AGENT_SYSTEM = """Bạn là trợ lý CSKH của hãng gọi xe Xanh SM. Trả lời ngắn gọn, lịch sự,
 bằng tiếng Việt, chỉ dựa trên dữ liệu được cung cấp. Nếu không có thông tin thì nói không có.
@@ -327,11 +336,61 @@ def eval_pii(limit: int | None, delay: float, pii_mode: str) -> Section:
     )
 
 
+
+# ===========================================================================
+# 4. Hội thoại nhiều lượt + trung thực với nguồn (T-012)
+# ===========================================================================
+def eval_multiturn(limit: int | None, delay: float) -> Section:
+    from eval.multiturn_eval import run_multiturn
+
+    data = asyncio.run(run_multiturn(limit, delay))
+    total = data["total"] or 1
+    answer_pct = pct(data["answer_correct"], total)
+    source_pct = pct(data["source_correct"], total)
+    faithful_pct = pct(data["faithful"], total)
+
+    lines = [
+        f"  Trả lời đúng số liệu : {answer_pct:5.1f}%  ({data['answer_correct']}/{total})   "
+        f"[ngưỡng ≥ {MULTITURN_TARGET * 100:.0f}%]  "
+        f"{'✅' if answer_pct >= MULTITURN_TARGET * 100 else '❌'}",
+        f"  Truy hồi đúng nguồn  : {source_pct:5.1f}%  ({data['source_correct']}/{total})",
+        f"  Trung thực với nguồn : {faithful_pct:5.1f}%  ({data['faithful']}/{total})   "
+        f"[ngưỡng = 100%]  {'✅' if faithful_pct >= FAITHFUL_TARGET * 100 else '❌'}",
+        "",
+        "  Trung thực = mọi con số tiền trong câu trả lời đều truy ngược được về",
+        "  đoạn tri thức đã lấy. Con số không truy ngược được thì coi là bịa.",
+    ]
+    if data["failures"]:
+        lines += ["", "  Kịch bản chưa đạt:"]
+        for f in data["failures"][:6]:
+            lines.append(f"    [{f['id']}] {f.get('note') or f.get('reason', '')}")
+            if f.get("turns"):
+                lines.append(f"          lượt: {' -> '.join(f['turns'])}")
+            if f.get("forbidden_hit"):
+                lines.append(f"          ❌ dùng số liệu SAI: {f['forbidden_hit']}")
+            if f.get("ungrounded"):
+                lines.append(f"          ❌ số không có trong nguồn: {f['ungrounded']}")
+            if f.get("source_ok") is False:
+                lines.append(f"          ❌ nguồn lấy được: {f.get('sources')}")
+            if f.get("answer"):
+                lines.append(f"          {f['answer'][:130]!r}")
+
+    return Section(
+        name="4. HỘI THOẠI NHIỀU LƯỢT & TRUNG THỰC VỚI NGUỒN",
+        passed=(answer_pct >= MULTITURN_TARGET * 100
+                and faithful_pct >= FAITHFUL_TARGET * 100),
+        lines=lines,
+        data={"answer_correct_pct": answer_pct, "source_correct_pct": source_pct,
+              "faithful_pct": faithful_pct, "total": total,
+              "failures": data["failures"]},
+    )
+
+
 # ===========================================================================
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bộ đo nghiệm thu GSM-01")
     parser.add_argument("--limit", type=int, default=None, help="Chỉ chạy N mục đầu mỗi bộ")
-    parser.add_argument("--only", choices=["intent", "rag", "pii"], default=None)
+    parser.add_argument("--only", choices=["intent", "rag", "pii", "multiturn"], default=None)
     parser.add_argument("--delay", type=float, default=0.4,
                         help="Giây nghỉ giữa các lời gọi — gói free Gemini giới hạn theo phút")
     parser.add_argument("--pii-mode", choices=["raw", "masked", "tokenized"],
@@ -352,6 +411,8 @@ def main() -> None:
         sections.append(eval_rag(args.limit, args.delay))
     if args.only in (None, "pii"):
         sections.append(eval_pii(args.limit, args.delay, args.pii_mode))
+    if args.only in (None, "multiturn"):
+        sections.append(eval_multiturn(args.limit, args.delay))
 
     for section in sections:
         print(f"\n{section.name}")

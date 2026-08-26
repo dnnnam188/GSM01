@@ -63,7 +63,6 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| T-012 | Đo lại, tối ưu, chaos test | D12 | P0 | Chạy T-008 lần cuối đạt cả 3 ngưỡng; test tắt LLM/DB/tool xem fallback | Nếu intent < 90% → chữa theo `intent-taxonomy.md` mục 4. **Bổ sung eval đa lượt + faithfulness** — xem bug-history 2026-08-26 |
 | T-013 | Đóng gói & demo | D13 | P1 | README có sơ đồ kiến trúc, video demo, kịch bản 5 phút chạy trọn luồng HITL | Ngày này cũng là đệm dự phòng |
 | T-014 | Dashboard thống kê & cảnh báo hạn mức | D10–D11 | P1 | 4 chỉ số + 2 biểu đồ khớp DB; bơm dữ liệu vượt ngưỡng → hiện cảnh báo | F13, F14 — **được phép cắt nếu trễ tiến độ** |
 | T-015 | Thu thập CSAT | D11 | P2 | Cuối phiên hỏi mức 1–5, ghi vào bảng `csat` | F16 — cắt đầu tiên nếu thiếu thời gian |
@@ -78,6 +77,7 @@
 | T-007 | D1: Đóng băng đặc tả, intent taxonomy & 7 ADR | 2026-08-25 | JOURNAL `[2026-08-25]` — PRD, intent-taxonomy, ADR-001…007, architecture, glossary, codemap, DoD |
 | T-002 | Schema PostgreSQL + seed data | 2026-08-26 | JOURNAL `[2026-08-26]` — **14 bảng** (nhiều hơn 12 dự kiến) đã áp lên Neon; 311 chuyến + 11 case khó; 4 truy vấn kiểm chứng đã chạy thật |
 | T-003 | Tool contracts (Pydantic) | 2026-08-26 | JOURNAL `[2026-08-26]` — 8 tool, 5 ghi / 3 đọc, error taxonomy 3 nhánh, 11 test pass, ruff sạch |
+| T-012 | Đo lại, chaos test, eval đa lượt + trung thực với nguồn | 2026-08-26 | JOURNAL `[2026-08-26] D9` — intent 97,5% · TTFT p95 1471ms · recall@3 100% · PII 0/20 · đa lượt **8/8** · trung thực **100%** · 69 test pass |
 | T-011 | HITL duyệt hoàn tiền bằng `interrupt()` + checkpointer Postgres | 2026-08-26 | JOURNAL `[2026-08-26] D8` — **26/26** kịch bản; graph dừng thật, resume đúng chỗ, khách nhận tin trên phiên đang mở |
 | T-005 | Backend API cho dashboard CSKH | 2026-08-26 | JOURNAL `[2026-08-26] D8` — hàng đợi HITL, duyệt/từ chối có ràng buộc lý do, transcript + tool trace, thống kê |
 | T-010 | Guardrail PII: token hoá trước khi vào context | 2026-08-26 | JOURNAL `[2026-08-26] D7` — **0/20 ca lộ** (từ 5/20 raw và 2/20 masked); 13 test; `StreamMasker` che ngay trên luồng |

@@ -13,6 +13,82 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D9: Đo Lại Toàn Bộ, Chaos Test, Và Lấp Lỗ Hổng Của Chính Bộ Đo (T-012)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-012 ✅
+
+### 📊 Toàn bộ chỉ số nghiệm thu
+| Chỉ số | Ngưỡng | Kết quả | |
+|---|---|---|---|
+| Độ chính xác intent | ≥ 90% | **97,5%** (79/81) | ✅ |
+| TTFT p50 / p95 | p95 < 3000 ms | **863 / 1.471 ms** | ✅ |
+| Recall@3 (RAG) | ≥ 85% | **100%** (30/30) · recall@1 93,3% | ✅ |
+| Rò rỉ PII | = 0 | **0/20** | ✅ |
+| Trả lời đúng số liệu (đa lượt) | ≥ 85% | **100%** (8/8) | ✅ |
+| **Trung thực với nguồn** | = 100% | **100%** (8/8) | ✅ |
+
+`pytest` **69/69** · `ruff` sạch. Trong 2 câu intent sai có 1 là lỗi tranh hạn mức 15 RPM
+(do tôi lỡ chạy hai bộ eval chồng nhau), không phải đoán sai.
+
+### ✅ Đã làm được
+- **Bộ eval đa lượt** (`eval/datasets/multiturn.py`, 8 kịch bản, 6 kịch bản có bẫy số liệu).
+  `M001` tái hiện đúng lỗi ngày D4 — nay đạt, tức đã có lưới chặn hồi quy.
+- **Chỉ số trung thực với nguồn**: mọi con số tiền trong câu trả lời phải có trong đoạn tri
+  thức đã lấy, **hoặc suy ra được** bằng phép tính đơn giản.
+- **Chaos test** (`tests/test_chaos.py`, 5 kịch bản): cả hai provider LLM chết · DB chết giữa
+  lúc gọi tool · truy hồi chết · lỗi nghiệp vụ FATAL · mọi sự cố đều để lại dấu vết.
+  Có một hàm khẳng định dùng chung: câu gửi cho khách **không được chứa** `Traceback`,
+  `psycopg`, `SELECT`, tên cột, tên provider.
+- `tests/conftest.py` đặt Selector event loop trên Windows — cùng nguyên nhân với `run_dev.py`.
+
+### 🔍 Phát hiện quan trọng nhất: bộ đo mới báo oan 4 lần, agent đúng cả 4
+Hai lần chạy đầu, phép đo mới gắn cờ 4 kịch bản. Đối chiếu `data/knowledge_base/` thì **cả 4
+đều là lỗi kỳ vọng do tôi viết**, không phải lỗi agent:
+
+| Ca | Bộ đo nói | Sự thật trong KB |
+|---|---|---|
+| M006 | `30.000` là "bịa" | Là **phép tính đúng**: 30 phút × 1.000đ/phút |
+| M007 | Nhắc `05 phút` là sai | KB mục 1.1 liệt kê *"tài xế đứng yên quá 05 phút"* **cũng là** điều kiện huỷ miễn phí |
+| M006 (lần 2) | Phải trả `30.000` | KB mục 2.4: *"Miễn phí 05 phút chờ đầu tiên"* → đáp án đúng là **25.000đ**, agent đúng hơn tôi |
+| M005 | Thiếu chữ "duyệt" | Bắt đủ nhiều từ khoá là biến phép đo thành trò đoán chữ |
+
+Đã sửa: cho phép suy ra bằng phép tính, bỏ bẫy sai ở M007, và **biến M006 thành bẫy thật** —
+agent nào quên cửa sổ miễn phí 5 phút sẽ trả 30.000đ và bị bắt.
+
+**Một phép đo hay báo oan còn tệ hơn không có**, vì nó dạy người ta bỏ qua báo động. Đã ghi
+cảnh báo này vào `eval/README.md`: mỗi lần bộ đa lượt báo đỏ, đối chiếu KB trước khi kết luận.
+
+### 🐞 Một test đỏ hoá ra là quy tắc nghiệp vụ chạy đúng
+`test_hoan_tien_duoi_nguong_thi_ai_tu_duyet` báo đỏ với `PENDING_HITL` thay vì `AUTO_APPROVED`.
+Nguyên nhân: khách demo đã có ≥2 lần hoàn tiền được duyệt trong tháng, nên quy tắc chống gian
+lận (KB 03 mục 4) ép lần thứ 3 sang HITL — **đúng như thiết kế**, chỉ là test của tôi phụ thuộc
+trạng thái tích luỹ. Đã thêm `_clear_month_approvals()` để test tự cô lập, và thêm hẳn một test
+mới kiểm tường minh quy tắc đó: chạy đủ `cap + 1` lần, hai lần đầu tự duyệt, lần thứ ba sang HITL.
+
+### 📁 File đã thay đổi
+- `eval/datasets/multiturn.py`, `eval/multiturn_eval.py`, `tests/test_chaos.py`,
+  `tests/conftest.py` — **mới**
+- `eval/run_eval.py` — thêm mục 4, đặt Selector loop, sửa cách in lỗi
+- `eval/README.md` — bảng ngưỡng mới + cảnh báo về chính bộ đo
+- `tests/test_tool_executor.py` — cô lập trạng thái tháng, thêm test hạn mức tháng
+- `.ai/context/bug-history.md` — đánh dấu lỗ hổng RAG đa lượt đã được lấp
+
+### ⏳ Đang dở
+- Không. T-012 đã thoả DoD.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Chưa merge vào `main`** — bản Render vẫn chạy code trước T-004.
+2. Bộ đa lượt chỉ có 8 kịch bản và vẫn do tôi tự soạn. Cảnh báo từ D3 còn nguyên giá trị:
+   nên nhờ người khác soạn thêm để con số có sức nặng thật.
+3. Đừng chạy hai bộ eval song song — chúng tranh nhau rổ 15 RPM và sinh lỗi giả.
+
+### ➡️ Việc tiếp theo
+- **T-013** đóng gói & demo · **T-014** dashboard thống kê + cảnh báo hạn mức · **T-015** CSAT.
+- T-006 vẫn chờ kiểm chứng trực quan (người dùng đã chấp nhận).
+
+---
+
 ## [2026-08-26] – D8: HITL Bằng `interrupt()` — Graph Dừng Thật Rồi Chạy Tiếp (T-011, T-005)
 
 - **Agent / Người thực hiện**: Claude Code
