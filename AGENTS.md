@@ -49,8 +49,12 @@
 |---|---|
 | Git / commit / branch | `.ai/skills/git-workflow.md` |
 | Viết test / sửa bug | `.ai/skills/testing.md` + `.ai/context/bug-history.md` |
-| Giao diện / UI / CSS | `.ai/skills/ui-ux-guide.md` |
-| Thiết kế & tối ưu hóa workflow / quy trình (as-is, to-be, hardening 4 lớp) | `.ai/skills/vibe-workflow-design-orchestrator/SKILL.md` |
+| Thiết kế giao diện chung (Anti-Slop UI/UX) | `.ai/skills/taste-skill/taste-skill/SKILL.md` |
+| Code giao diện đầy đủ (Chống code dở dang / TODO) | `.ai/skills/taste-skill/output-skill/SKILL.md` |
+| Giao diện phong cách Xanh SM (Mềm mại, Soft UI) | `.ai/skills/taste-skill/soft-skill/SKILL.md` |
+| Chuyển ảnh Mockup / Screenshot thành Code | `.ai/skills/taste-skill/image-to-code-skill/SKILL.md` |
+| Khám nghiệm & lột xác giao diện cũ (Redesign) | `.ai/skills/taste-skill/redesign-skill/SKILL.md` |
+| Thiết kế & tối ưu hóa workflow / quy trình (as-is, to-be) | `.ai/skills/vibe-workflow-design-orchestrator/SKILL.md` |
 | Phát triển tính năng mới | `docs/PRD.md` |
 | Hiểu kiến trúc tổng thể | `.ai/context/architecture.md` |
 
