@@ -39,7 +39,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+!src/frontend/lib/
 lib64/
 parts/
 sdist/
