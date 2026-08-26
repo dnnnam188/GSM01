@@ -5,9 +5,12 @@ import { Shell } from "@/components/Shell";
 import {
   decideRefund,
   fetchDashboard,
+  fetchStats,
   fetchQueue,
   fetchTranscript,
   type DashboardSummary,
+  type DashboardStats,
+  type QuotaAlert,
   type PendingCase,
   type Session,
   type Transcript,
@@ -24,16 +27,19 @@ export function AgentDashboard({
   const [tab, setTab] = useState("queue");
   const [queue, setQueue] = useState<PendingCase[] | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState("");
 
   const reload = useCallback(async () => {
     try {
-      const [q, s] = await Promise.all([
+      const [q, s, st] = await Promise.all([
         fetchQueue(session.accessToken),
         fetchDashboard(session.accessToken),
+        fetchStats(session.accessToken),
       ]);
       setQueue(q.pending);
       setSummary(s);
+      setStats(st);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được dữ liệu");
@@ -64,7 +70,7 @@ export function AgentDashboard({
           onDecided={reload}
         />
       ) : (
-        <StatsView summary={summary} />
+        <StatsView summary={summary} stats={stats} />
       )}
     </Shell>
   );
@@ -322,27 +328,63 @@ function TranscriptView({ token, item }: { token: string; item: PendingCase }) {
 }
 
 /* ------------------------------------------------------------------ */
-function StatsView({ summary }: { summary: DashboardSummary | null }) {
+function StatsView({
+  summary,
+  stats,
+}: {
+  summary: DashboardSummary | null;
+  stats: DashboardStats | null;
+}) {
   if (!summary) return <QueueSkeleton />;
 
   const overBudget = summary.ttft_p95_ms !== null && summary.ttft_p95_ms >= 3000;
   const intents = Object.entries(summary.messages_by_intent).sort((a, b) => b[1] - a[1]);
   const busiest = intents[0]?.[1] ?? 1;
+  // Chỉ nêu cảnh báo khi thật sự có chuyện. Một dải băng "mọi thứ đều ổn" nằm
+  // thường trực trên đầu trang sẽ dạy người dùng bỏ qua đúng chỗ đó.
+  const alerts = (stats?.alerts ?? []).filter((a) => a.level !== "OK");
 
   return (
     <div className="stack">
+      {alerts.map((a) => (
+        <QuotaBanner key={a.key} alert={a} />
+      ))}
+
       <div className="metrics">
         <Metric value={summary.pending_hitl} label="Chờ duyệt hoàn tiền" />
-        <Metric value={summary.open_tickets} label="Ticket đang mở" />
-        <Metric value={summary.total_messages} label="Tin nhắn đã xử lý" />
-        <Metric value={summary.tool_calls} label="Lượt gọi công cụ" />
+        <Metric
+          value={stats ? `${stats.tickets.open}/${stats.tickets.total}` : "—"}
+          label="Ticket đang mở / tổng"
+        />
+        <Metric
+          value={
+            stats?.auto_resolve.rate_percent === null ||
+            stats?.auto_resolve.rate_percent === undefined
+              ? "—"
+              : `${stats.auto_resolve.rate_percent}%`
+          }
+          label="Tỷ lệ tự xử lý"
+        />
+        <Metric
+          value={stats?.csat.average === null || stats?.csat.average === undefined
+            ? "—"
+            : stats.csat.average.toFixed(2)}
+          label={`Điểm hài lòng · ${stats?.csat.count ?? 0} lượt`}
+        />
+        <Metric
+          value={stats ? stats.tokens_today.toLocaleString("vi-VN") : "—"}
+          label="Token hôm nay"
+        />
         <Metric
           value={summary.ttft_p95_ms ? ms(summary.ttft_p95_ms) : "—"}
           label="Phản hồi p95 · ngưỡng 3 s"
           alert={overBudget}
         />
-        <Metric value={summary.total_tokens.toLocaleString("vi-VN")} label="Token đã dùng" />
+        <Metric value={summary.total_messages} label="Tin nhắn đã xử lý" />
+        <Metric value={summary.tool_calls} label="Lượt gọi công cụ" />
       </div>
+
+      {stats && <DailyChart daily={stats.daily} />}
 
       <section className="panel">
         <p className="section-title">Phân bố yêu cầu theo ý định</p>
@@ -386,6 +428,70 @@ function StatsView({ summary }: { summary: DashboardSummary | null }) {
         )}
       </section>
     </div>
+  );
+}
+
+/** Cảnh báo hạn mức trong ngày (F14). */
+function QuotaBanner({ alert }: { alert: QuotaAlert }) {
+  const vuot = alert.level === "DANGER";
+  const so = (n: number) => n.toLocaleString("vi-VN");
+  return (
+    <p className={vuot ? "notice notice--danger" : "notice notice--warn"}>
+      <strong>{vuot ? "Đã vượt hạn mức" : "Sắp chạm hạn mức"}</strong> · {alert.label}:{" "}
+      <span className="tnum">
+        {so(alert.current)} / {so(alert.cap)} {alert.unit}
+      </span>{" "}
+      ({alert.ratio_percent}%)
+    </p>
+  );
+}
+
+/** Biểu đồ 7 ngày. Cột dựng bằng CSS, không kéo thêm thư viện biểu đồ nào. */
+function DailyChart({
+  daily,
+}: {
+  daily: { label: string; messages: number; tokens: number; refunded_vnd: number }[];
+}) {
+  // Chia tỷ lệ theo giá trị lớn nhất, nhưng chặn dưới bằng 1 để ngày rỗng không
+  // chia cho 0. Cột của ngày có dữ liệu luôn cao tối thiểu 2px, nếu không một
+  // ngày ít việc sẽ trông y hệt ngày không có việc nào.
+  const dinh = Math.max(1, ...daily.map((d) => d.messages));
+  const tongHoan = daily.reduce((t, d) => t + d.refunded_vnd, 0);
+
+  return (
+    <section className="panel">
+      <p className="section-title">Hoạt động 7 ngày gần nhất</p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${daily.length}, 1fr)`,
+          alignItems: "end",
+          gap: 8,
+          height: 120,
+        }}
+      >
+        {daily.map((d) => (
+          <div key={d.label} style={{ display: "grid", gap: 6, justifyItems: "center" }}>
+            <span className="tnum" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {d.messages || ""}
+            </span>
+            <div
+              title={`${d.label}: ${d.messages} tin nhắn · ${d.tokens.toLocaleString("vi-VN")} token`}
+              style={{
+                width: "100%",
+                height: d.messages ? Math.max(2, (d.messages / dinh) * 80) : 2,
+                borderRadius: 3,
+                background: d.messages ? "var(--accent)" : "var(--surface-sunken)",
+              }}
+            />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{d.label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="empty__hint" style={{ marginTop: 12 }}>
+        Tổng hoàn tiền 7 ngày: {tongHoan.toLocaleString("vi-VN")} VNĐ
+      </p>
+    </section>
   );
 }
 

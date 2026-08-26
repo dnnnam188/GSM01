@@ -13,6 +13,50 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D11: Dashboard thống kê và cảnh báo hạn mức (T-014)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-014 ✅ (F13, F14)
+
+### 📊 Kết quả
+`pytest` **79/79** (thêm 10) · `test_e2e_slice` **28/28** · `test_graph_scenarios` **34/34** ·
+`npm run build` sạch · ruff sạch.
+
+### ✅ Đã làm được
+- **`repository.dashboard_stats()`** — 4 chỉ số (ticket mở/tổng, CSAT, tỷ lệ tự xử lý, token
+  trong ngày), 2 biểu đồ (phân bố theo intent, hoạt động 7 ngày), và cảnh báo hạn mức.
+- **`GET /api/dashboard/stats`** — chỉ CSKH xem được; đã kiểm khách vào bị 403, không token 401.
+- **Giao diện**: dải cảnh báo đỏ/vàng trên đầu tab Tổng quan, hàng chỉ số, biểu đồ 7 ngày dựng
+  bằng CSS thuần — không kéo thêm thư viện biểu đồ nào.
+- **`scripts/demo_quota_alert.py on|off`** — bật/tắt cảnh báo để trình bày F14.
+
+### 🔍 Hai chỗ suýt sai, tìm ra nhờ đo chứ không nhờ đọc code
+1. **Mốc ngày cắt theo GMT.** Neon chạy múi giờ GMT, nên `date_trunc('day', now())` làm hạn mức
+   "trong ngày" reset lúc **7 giờ sáng giờ Việt Nam** — mọi giao dịch từ 0h đến 7h bị tính sang
+   ngày hôm trước. Một hạn mức chống gian lận mà lệch 7 tiếng thì không còn là hạn mức. Đã đổi
+   toàn bộ mốc sang `Asia/Ho_Chi_Minh`.
+2. **Tính tiền hoàn theo `created_at`.** Sai: hạn mức là hạn mức **chi tiêu**, mà tiền chỉ thật
+   sự ra khi được duyệt. Yêu cầu tạo hôm qua, CSKH duyệt hôm nay thì phải tính vào hôm nay. Đã
+   đổi sang `coalesce(decided_at, created_at)`. Chỗ này lộ ra nhờ ràng buộc `refund_decision_shape`
+   trong schema chặn dòng test thiếu `decided_at` — schema làm đúng việc của nó.
+
+### 🧪 Cách kiểm: không tin con số nào do chính hàm thống kê trả về
+Cả 10 bài kiểm đều **tính lại từng chỉ số bằng một truy vấn viết độc lập** rồi mới đem so. Dashboard
+lệch với DB còn tệ hơn không có dashboard, vì CSKH sẽ quyết định trên số sai mà không hề biết.
+Riêng F14 kiểm bằng dữ liệu thật ghi vào DB rồi xoá đi — cảnh báo chỉ đúng trên hàm giả thì tới
+lúc có sự cố thật nó vẫn im. Đo qua HTTP: `OK → DANGER (3.000.000/2.000.000) → OK`.
+
+### 🤔 Một quyết định cố ý: không quy token ra tiền
+F13 ghi "chi phí token". Đơn giá của nhà cung cấp là con số không đo được từ trong hệ thống, mà
+bịa một đơn giá rồi in lên dashboard thì đó là số liệu giả. Thay vào đó đo lượng token trong ngày
+và đối chiếu với hạn mức ngày — vừa thật, vừa nối thẳng vào cảnh báo F14.
+
+### ➡️ Việc tiếp theo
+T-015 (CSAT) — bảng `csat_ratings` đã có sẵn, dashboard đã có ô hiển thị đang trả `—` vì chưa có
+dữ liệu. Người dùng cần: gộp nhánh vào `main`, nhập key vào Render, quay video demo.
+
+---
+
 ## [2026-08-26] – Sửa lỗi agent hỏi lại vòng vo, và một bài học về checkpointer
 
 - **Agent / Người thực hiện**: Claude Code

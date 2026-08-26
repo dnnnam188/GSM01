@@ -137,6 +137,14 @@ async def dashboard(_: Annotated[dict[str, Any], Depends(require_agent)]) -> dic
     return await asyncio.to_thread(repo.dashboard_summary)
 
 
+@app.get("/api/dashboard/stats")
+async def dashboard_stats(
+    _: Annotated[dict[str, Any], Depends(require_agent)],
+) -> dict[str, Any]:
+    """Thống kê đầy đủ + cảnh báo hạn mức (F13, F14). Chỉ CSKH xem được."""
+    return await asyncio.to_thread(repo.dashboard_stats)
+
+
 @app.get("/api/conversations/{conversation_id}/transcript")
 async def transcript(
     conversation_id: str,

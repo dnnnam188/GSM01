@@ -145,6 +145,142 @@ def dashboard_summary() -> dict[str, Any]:
             "ttft_p95_ms": p95}
 
 
+# Neon chạy múi giờ GMT, còn đây là dịch vụ ở Việt Nam. Nếu cắt ngày bằng
+# `date_trunc('day', now())` thì hạn mức "trong ngày" của F14 sẽ reset lúc 7 giờ
+# sáng giờ Việt Nam, và mọi giao dịch từ 0h đến 7h bị tính nhầm sang ngày hôm
+# trước — hạn mức chống gian lận mà lệch 7 tiếng thì không còn là hạn mức.
+VN_TZ = "Asia/Ho_Chi_Minh"
+VN_DAY_START = f"(date_trunc('day', now() AT TIME ZONE '{VN_TZ}') AT TIME ZONE '{VN_TZ}')"
+
+
+def dashboard_stats() -> dict[str, Any]:
+    """Thống kê cho dashboard CSKH (F13) và cảnh báo hạn mức (F14).
+
+    Mọi con số đều tính thẳng từ DB trong **một** kết nối, không có số nào được
+    nhớ sẵn ở tầng ứng dụng — dashboard mà lệch với DB thì tệ hơn là không có
+    dashboard, vì CSKH sẽ ra quyết định dựa trên số sai.
+
+    Về "chi phí token" (F13): cố ý **không** quy ra tiền. Đơn giá của nhà cung cấp
+    là con số tôi không đo được từ trong hệ thống, mà bịa một đơn giá rồi in ra
+    màn hình thì đó là số liệu giả. Thay vào đó đo lượng token trong ngày và đối
+    chiếu với hạn mức ngày — vừa thật, vừa nối thẳng vào cảnh báo F14.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        # --- 4 chỉ số ------------------------------------------------------
+        cur.execute("SELECT count(*) FILTER (WHERE status = 'OPEN'), count(*) FROM tickets")
+        tickets_open, tickets_total = cur.fetchone()
+
+        cur.execute("SELECT count(*), avg(score) FROM csat_ratings")
+        csat_count, csat_avg = cur.fetchone()
+
+        # Tỷ lệ tự xử lý: hội thoại đã có trả lời của AI mà KHÔNG phải nhờ tới
+        # người. "Phải nhờ người" = đang chờ người, hoặc từng sinh ra một yêu cầu
+        # hoàn tiền không tự duyệt được.
+        cur.execute("""
+            WITH answered AS (
+                SELECT DISTINCT c.id, c.status
+                FROM conversations c
+                JOIN messages m ON m.conversation_id = c.id AND m.role = 'assistant'
+            ), escalated AS (
+                SELECT DISTINCT a.id FROM answered a
+                LEFT JOIN refund_requests r ON r.conversation_id = a.id
+                WHERE a.status = 'WAITING_HUMAN'
+                   OR r.status IN ('PENDING_HITL', 'APPROVED', 'REJECTED')
+            )
+            SELECT (SELECT count(*) FROM answered), (SELECT count(*) FROM escalated)
+        """)
+        conv_answered, conv_escalated = cur.fetchone()
+
+        cur.execute(f"""
+            SELECT coalesce(sum(coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0)), 0)
+            FROM messages WHERE created_at >= {VN_DAY_START}
+        """)
+        tokens_today = int(cur.fetchone()[0])
+
+        # --- Biểu đồ 1: phân bố theo intent --------------------------------
+        cur.execute("SELECT intent, count(*) FROM messages WHERE intent IS NOT NULL "
+                    "GROUP BY intent ORDER BY 2 DESC")
+        by_intent = [{"intent": r[0], "count": r[1]} for r in cur.fetchall()]
+
+        # --- Biểu đồ 2: 7 ngày gần nhất ------------------------------------
+        # `generate_series` để ngày không có hoạt động vẫn có cột 0, nếu không
+        # biểu đồ sẽ co lại và trông như ngày đó không tồn tại.
+        cur.execute(f"""
+            SELECT to_char(d.day AT TIME ZONE '{VN_TZ}', 'DD/MM') AS label,
+                   coalesce(m.messages, 0), coalesce(m.tokens, 0), coalesce(r.refunded, 0)
+            FROM generate_series({VN_DAY_START} - interval '6 days',
+                                 {VN_DAY_START}, interval '1 day') AS d(day)
+            LEFT JOIN (
+                SELECT date_trunc('day', created_at AT TIME ZONE '{VN_TZ}')
+                           AT TIME ZONE '{VN_TZ}' AS day,
+                       count(*) AS messages,
+                       sum(coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0)) AS tokens
+                FROM messages GROUP BY 1
+            ) m ON m.day = d.day
+            LEFT JOIN (
+                SELECT date_trunc('day', coalesce(decided_at, created_at)
+                                  AT TIME ZONE '{VN_TZ}') AT TIME ZONE '{VN_TZ}' AS day,
+                       sum(amount) AS refunded
+                FROM refund_requests WHERE status IN ('AUTO_APPROVED', 'APPROVED') GROUP BY 1
+            ) r ON r.day = d.day
+            ORDER BY d.day
+        """)
+        daily = [{"label": r[0], "messages": r[1], "tokens": int(r[2]),
+                  "refunded_vnd": int(r[3])} for r in cur.fetchall()]
+
+        # --- Cảnh báo hạn mức (F14) ----------------------------------------
+        # Tính theo `decided_at` chứ không phải `created_at`: hạn mức là hạn mức
+        # **chi tiêu**, mà tiền chỉ thật sự ra khi được duyệt. Một yêu cầu tạo hôm
+        # qua nhưng CSKH duyệt hôm nay phải tính vào hạn mức hôm nay.
+        cur.execute(f"""
+            SELECT coalesce(sum(amount), 0) FROM refund_requests
+            WHERE status IN ('AUTO_APPROVED', 'APPROVED')
+              AND coalesce(decided_at, created_at) >= {VN_DAY_START}
+        """)
+        refunded_today = int(cur.fetchone()[0])
+
+        cur.execute("SELECT config_key, config_value FROM business_config "
+                    "WHERE config_key IN ('alert.daily_refund_cap_vnd', 'alert.daily_token_cap')")
+        caps = {k: int(v) for k, v in cur.fetchall()}
+
+    auto_rate = (round((conv_answered - conv_escalated) / conv_answered * 100, 1)
+                 if conv_answered else None)
+
+    alerts = [
+        _quota_alert("refund", "Hoàn tiền trong ngày", refunded_today,
+                     caps.get("alert.daily_refund_cap_vnd"), "VNĐ"),
+        _quota_alert("token", "Token tiêu thụ trong ngày", tokens_today,
+                     caps.get("alert.daily_token_cap"), "token"),
+    ]
+    return {
+        "tickets": {"open": tickets_open, "total": tickets_total},
+        "csat": {"average": round(float(csat_avg), 2) if csat_avg is not None else None,
+                 "count": csat_count},
+        "auto_resolve": {"rate_percent": auto_rate, "answered": conv_answered,
+                         "escalated": conv_escalated},
+        "tokens_today": tokens_today,
+        "by_intent": by_intent,
+        "daily": daily,
+        "alerts": [a for a in alerts if a],
+    }
+
+
+def _quota_alert(key: str, label: str, current: int, cap: int | None,
+                 unit: str) -> dict[str, Any] | None:
+    """Một mức cảnh báo cho một hạn mức.
+
+    Có ba mức chứ không phải hai: `OK` / `WARN` từ 80% / `DANGER` khi chạm hạn mức.
+    Cảnh báo chỉ khi đã vượt thì tới lúc hiện ra là đã muộn — mức 80% để CSKH còn
+    kịp làm gì đó.
+    """
+    if not cap:
+        return None
+    ratio = current / cap
+    level = "DANGER" if ratio >= 1 else "WARN" if ratio >= 0.8 else "OK"
+    return {"key": key, "label": label, "current": current, "cap": cap,
+            "unit": unit, "ratio_percent": round(ratio * 100, 1), "level": level}
+
+
 def get_business_config() -> dict[str, Any]:
     """Ngưỡng nghiệp vụ đọc lúc chạy, không hardcode (ADR-006)."""
     casts = {"int": int, "float": float, "bool": lambda v: v.lower() == "true"}

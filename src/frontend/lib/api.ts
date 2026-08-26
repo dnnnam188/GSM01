@@ -34,6 +34,26 @@ export type DashboardSummary = {
   messages_by_intent: Record<string, number>;
 };
 
+export type QuotaAlert = {
+  key: string;
+  label: string;
+  current: number;
+  cap: number;
+  unit: string;
+  ratio_percent: number;
+  level: "OK" | "WARN" | "DANGER";
+};
+
+export type DashboardStats = {
+  tickets: { open: number; total: number };
+  csat: { average: number | null; count: number };
+  auto_resolve: { rate_percent: number | null; answered: number; escalated: number };
+  tokens_today: number;
+  by_intent: { intent: string; count: number }[];
+  daily: { label: string; messages: number; tokens: number; refunded_vnd: number }[];
+  alerts: QuotaAlert[];
+};
+
 export type TranscriptMessage = {
   role: string;
   content: string;
@@ -85,6 +105,9 @@ export async function login(email: string, password: string): Promise<Session> {
 
 export const fetchDashboard = (token: string) =>
   request<DashboardSummary>("/api/dashboard/summary", {}, token);
+
+export const fetchStats = (token: string) =>
+  request<DashboardStats>("/api/dashboard/stats", {}, token);
 
 export const fetchQueue = (token: string) =>
   request<{ pending: PendingCase[]; count: number }>("/api/hitl/queue", {}, token);
