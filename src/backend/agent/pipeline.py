@@ -20,6 +20,7 @@ from src.backend.agent.graph import ANSWER_SYSTEM, run_graph
 from src.backend.db import repository as repo
 from src.backend.llm.client import LLMClient, LLMError
 from src.backend.pii.detector import mask_text
+from src.backend.pii.tokenizer import StreamMasker, get_vault
 
 FALLBACK_ANSWER = (
     "Dạ em xin lỗi, hệ thống đang bận nên em chưa tra cứu được ngay lúc này. "
@@ -82,6 +83,10 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
 
     # --- Stream câu trả lời -----------------------------------------------
     yield {"type": "status", "value": "Đang soạn câu trả lời"}
+    # Che ngay trên luồng, không đợi tới cuối: thứ khách nhìn thấy là thứ được
+    # đẩy ra từng mảnh, nên che sau vòng lặp thì chỉ sạch trong DB mà bẩn trên
+    # màn hình. StreamMasker giữ lại phần đuôi có thể là placeholder dở dang.
+    masker = StreamMasker(get_vault(conversation_id))
     collected: list[str] = []
     ttft_ms: int | None = None
     usage: dict[str, Any] = {}
@@ -94,7 +99,9 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
             if first_ms is not None:
                 ttft_ms = first_ms
             collected.append(delta)
-            yield {"type": "token", "value": delta}
+            visible = masker.feed(delta)
+            if visible:
+                yield {"type": "token", "value": visible}
     except LLMError as exc:
         await asyncio.to_thread(
             repo.log_tool_call, conversation_id, "generate_answer",
@@ -107,7 +114,16 @@ async def run_turn(customer_id: str, thread_id: str, message: str,
             yield {"type": "done", "intent": intent, "degraded": True}
             return
 
-    answer = mask_text("".join(collected))  # lưới an toàn lớp hai (ADR-004)
+    tail = masker.flush()
+    if tail:
+        yield {"type": "token", "value": tail}
+
+    # Hai lớp, theo đúng thứ tự của ADR-004:
+    #   1. Placeholder còn sót -> dạng che thân thiện (0912****78). Đây là lớp
+    #      CHÍNH: LLM chưa từng thấy giá trị thật nên không thể đọc ra.
+    #   2. Regex quét số/địa chỉ lọt lưới. Lớp DỰ PHÒNG, không được tin cậy một mình.
+    answer = get_vault(conversation_id).mask_for_display("".join(collected))
+    answer = mask_text(answer)
     await _persist(
         conversation_id, answer, intent=intent,
         intent_confidence=state.get("confidence"),

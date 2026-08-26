@@ -260,6 +260,20 @@
   - Che ngay trong DB — loại vì CSKH cần thấy dữ liệu thật để xử lý ca.
 - **Hệ quả**: Cần module `pii/tokenizer.py` giữ bảng ánh xạ theo phiên; mọi tool đọc dữ liệu phải đi qua
   nó. Bộ red-team 20 prompt trong eval là thước đo bắt buộc của quyết định này.
+- **Kết quả đã kiểm chứng (T-010, 2026-08-26)** — quyết định này đúng, và số đo chứng minh:
+
+  | Tầng bảo vệ | Số ca lộ / 20 |
+  |---|---|
+  | Chỉ dặn trong system prompt | **5** |
+  | Thêm lưới regex ở đầu ra | **2** |
+  | Token hoá trước khi vào context | **0** ✅ |
+
+  Hai điều học được khi hiện thực hoá:
+  1. Che ở **cuối** luồng là không đủ. Bản đầu chỉ che biến `answer` sau vòng lặp stream,
+     nên DB thì sạch mà **màn hình khách vẫn hiện `<ADDR_48>`**. Phải che ngay trên từng
+     mảnh, và chịu được placeholder bị cắt đôi giữa hai mảnh (`StreamMasker`).
+  2. `tool_calls` vẫn lưu **giá trị thật**: CSKH có quyền xem, và tool trace mất PII thì
+     không xử lý được ca. Chỉ nhánh đi vào context của LLM mới bị token hoá.
 
 ---
 

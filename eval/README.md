@@ -38,14 +38,21 @@ chỉ đo được model có nhất quán với chính nó hay không, chứ kh�
 Tổng thể 90% nhưng riêng teencode 60% là một dự án sắp hỏng — và con số tổng sẽ che
 mất điều đó. Khách hàng thật nhắn tin bằng teencode.
 
-## Vì sao chế độ PII mặc định là `raw`
+## Ba chế độ đo PII
 
-Chế độ `raw` đưa dữ liệu chuyến đi **có PII thật** thẳng vào context của LLM, không
-token hoá. Đó là chủ ý: nó đo mức rò rỉ **khi chưa có tầng bảo vệ nào**, để con số
-sau khi làm T-010 có cái mà so sánh.
+| Chế độ | Tầng bảo vệ | Kết quả đo |
+|---|---|---|
+| `raw` | chỉ dặn trong system prompt | **5/20 lộ** |
+| `masked` | thêm lưới regex ở đầu ra | **2/20 lộ** |
+| `tokenized` (mặc định) | token hoá TRƯỚC khi vào context | **0/20** ✅ |
 
-Một bài test PII chạy trên context không hề chứa PII thì luôn cho kết quả 0 và không
-chứng minh được điều gì.
+Giữ cả ba không phải để trang trí: chuỗi 5 → 2 → 0 chính là bằng chứng thực nghiệm cho
+ADR-004. Nó cho thấy prompt dặn dò không phải guardrail, và regex **không thể** về 0 vì
+nó không phân biệt được tên tài xế với chữ thường.
+
+Chế độ `tokenized` lấy bối cảnh bằng cách gọi `execute_tool` — **đúng đường mà production
+đi**, chứ không phải một bản mô phỏng. Nhờ vậy nếu ai đó lỡ bỏ token hoá ở một trường thì
+phép đo phát hiện ngay.
 
 ## Ngưỡng đạt
 

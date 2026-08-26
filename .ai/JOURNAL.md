@@ -13,6 +13,121 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D7: Token Hoá PII — Đưa Rò Rỉ Từ 5/20 Về 0/20 (T-010)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-010 ✅
+
+### 📊 Ba con số nghiệm thu
+| Tầng bảo vệ | Số ca lộ / 20 |
+|---|---|
+| Chỉ dặn trong system prompt (`raw`) | 5 |
+| Thêm lưới regex ở đầu ra (`masked`) | 2 |
+| **Token hoá trước khi vào context (`tokenized`)** | **0** ✅ |
+
+`pytest` **63/63** · `tests.test_e2e_slice` **28/28** · `ruff` sạch.
+
+### ✅ Đã làm được
+- **`pii/tokenizer.py`** — thay PII **theo trường đã biết**, không đoán theo mẫu. Dữ liệu ra
+  từ DB đi qua đúng các trường đã đánh dấu `pii_field()` từ D2, nên không bỏ sót; còn regex
+  thì mãi mãi không phân biệt được tên tài xế với chữ thường.
+- **Placeholder ổn định trong một hội thoại**: cùng số điện thoại luôn cho cùng
+  `<PHONE_C7>`, nên LLM vẫn suy luận được "hai chuyến này cùng một tài xế" mà không hề biết
+  người đó là ai. Hai hội thoại khác nhau thì placeholder khác nhau.
+- **Đệ quy xuống model lồng nhau và danh sách** — `GetRideHistoryOutput` chứa danh sách
+  chuyến, bỏ sót là lộ nguyên lịch sử đi lại.
+- **`tool_calls` vẫn lưu giá trị THẬT**: CSKH có quyền xem, và tool trace mất PII thì không
+  xử lý được ca. Chỉ nhánh đi vào context của LLM mới bị token hoá.
+- **Chế độ eval `tokenized` đi qua đúng đường của production** (`execute_tool`), không phải
+  bản mô phỏng — nên nếu ai đó lỡ bỏ token hoá ở một trường thì phép đo phát hiện ngay.
+
+### 🐞 Lỗi của chính tôi, bắt được nhờ nhìn màn hình khách
+Bản đầu chỉ che biến `answer` **sau** vòng lặp stream. Red-team đo ra 0/20, test xanh hết —
+nhưng khi tôi thử hỏi một câu thật thì khách nhìn thấy:
+
+```
+- Điểm đi: <ADDR_48>
+- Điểm đến: <ADDR_33>
+```
+
+DB thì sạch, màn hình thì bẩn. Vì token đẩy cho khách là bản thô, chỉ bản lưu mới được che.
+
+Che trên luồng khó hơn một bậc: model có thể phát `<ADDR` ở mảnh này và `_48>` ở mảnh sau.
+Đã viết `StreamMasker` giữ lại phần đuôi *có thể* là placeholder dở dang, chỉ đẩy ra phần
+chắc chắn an toàn. Kiểm cả trường hợp xấu nhất — mỗi mảnh đúng một ký tự.
+
+Sau khi sửa, khách thấy: `Điểm đi: 169 ***` — che được, vẫn đọc hiểu được, và **không lộ
+luôn cả cơ chế bên trong**.
+
+Bài học lặp lại lần thứ ba trong dự án: **bộ đo xanh không có nghĩa là sản phẩm đúng.**
+Lần một là RAG đa lượt trả sai số liệu, lần hai là `thinkingConfig` chết lặng, lần này là
+placeholder lọt ra giao diện. Cả ba đều chỉ lộ ra khi nhìn vào thứ người dùng thật sự thấy.
+
+### 📁 File đã thay đổi
+- `src/backend/pii/tokenizer.py` — **mới** (`PiiVault`, `tokenize_model`, `StreamMasker`)
+- `src/backend/tools/executor.py` — token hoá ở đúng ranh giới dữ liệu rời tầng tool
+- `src/backend/agent/pipeline.py` — che ngay trên luồng stream
+- `eval/run_eval.py` — thêm chế độ `tokenized`, đặt làm mặc định
+- `eval/README.md` — bảng ba chế độ và ý nghĩa của việc giữ cả ba
+- `tests/test_pii_tokenizer.py` — **mới**, 13 test
+- `.ai/context/decisions.md` — ADR-004 bổ sung kết quả đã kiểm chứng
+
+### ⏳ Đang dở
+- Không. T-010 đã thoả DoD.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Kho ánh xạ hiện nằm **trong bộ nhớ tiến trình**. Render free tier ngủ rồi khởi động lại
+  là mất kho: hội thoại cũ vẫn đọc được (placeholder mới sinh lại từ hash), nhưng
+  `detokenize` cho các placeholder cũ sẽ không khôi phục được. Chưa ảnh hưởng gì vì CSKH
+  đọc giá trị thật thẳng từ `tool_calls`. Nếu T-005 cần khôi phục theo placeholder thì phải
+  đẩy kho xuống DB.
+- Chưa deploy bản này lên Render.
+
+### ➡️ Việc tiếp theo
+- **T-011** — HITL bằng `interrupt()`: hoàn > ngưỡng thì graph **dừng thật**, CSKH duyệt
+  xong thì chạy tiếp từ đúng chỗ dừng. Chỗ móc đã sẵn trong `tool_node` và `resume_thread_id`.
+
+---
+
+## [2026-08-26] – D6e: Đóng T-009 — Nghiệm Thu Trên Bản Deploy Thật
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-009 ✅, T-004 ✅
+
+### 📊 Kết quả trên `https://gsm01-api.onrender.com`
+**28/28 phép kiểm đạt.** TTFT **945 ms** và **1.135 ms**, `model_name` trong DB xác nhận
+`gemini-3.5-flash-lite` (trước đó bản deploy còn chạy `gemini-3.5-flash` với TTFT 3.872 ms).
+
+Câu trả lời lượt 2 đúng số liệu: *"phí hủy chuyến Xanh SM Bike là 10.000 VNĐ"* — tức bản vá
+viết lại câu hỏi đa lượt (`standalone_query`) cũng hoạt động đúng trên môi trường thật.
+
+### ✅ Hai task đóng cùng lúc
+- **T-009** — đăng nhập 2 vai trò, phân quyền chặn ở server (khách gọi dashboard → 403),
+  WebSocket streaming, RAG, ghi `messages`/`tool_calls`, transcript + tool trace cho CSKH.
+- **T-004** — LangGraph 5 node, 8 tool nghiệp vụ thật, 26/26 kịch bản, 50 test pass.
+
+### 🐞 Sự cố deploy đã xử lý trong ngày
+`JWT_EXPIRE_MINUTES` trên Render mang giá trị `720` kèm một dấu backtick — dấu vết sao chép
+từ văn bản có định dạng mã. App chết ngay lúc khởi động với `ValueError` của `int()`, và
+thông báo lỗi **không hề nói biến nào sai**. Đã thêm `config/env.py` gột sạch ký tự rác và
+báo lỗi nêu đích danh tên biến, kèm 14 test — trong đó một test quét mã nguồn cấm
+`int(os.getenv(...))` để chặn tái diễn.
+
+### ⏳ Đang dở
+- Không. Mốc **M4 (vertical slice đã deploy)** và phần graph của **M5** đều xong.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- `PYTHON_VERSION` trên Render là **3.14.3** trong khi máy phát triển và `render.yaml` là
+  **3.13.7**. Chưa gây lỗi, nhưng làm câu "test xanh ở máy" yếu đi một bậc. Nên chỉnh cho khớp.
+- Chưa kiểm chứng được **đường lui trên môi trường deploy**: không có cách ép Gemini hỏng từ
+  bên ngoài. Đã chạy đúng ở cục bộ. Cân nhắc thêm mục cấu hình vào `/api/health`.
+
+### ➡️ Việc tiếp theo
+- **T-010** — token hoá PII, đưa **5/20 → 0/20**.
+- **T-011** — HITL bằng `interrupt()`.
+
+---
+
 ## [2026-08-26] – D6d: Chẩn Đoán Hạn Mức Gemini & Tự Giãn Nhịp (ADR-012)
 
 - **Agent / Người thực hiện**: Claude Code
