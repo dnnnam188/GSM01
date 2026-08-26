@@ -43,6 +43,21 @@ def _cleanup_refunds(codes: list[str]) -> None:
         cur.execute("DELETE FROM refund_requests WHERE refund_code = ANY(%s)", (codes,))
 
 
+def _clear_month_approvals(customer_id: str) -> None:
+    """Xoá các lần hoàn tiền ĐÃ DUYỆT trong tháng của khách demo.
+
+    Hạn mức `refund.auto_approve_max_per_month` là quy tắc **có trạng thái tích
+    luỹ** (KB 03 mục 4): từ lần thứ 3 trong tháng, mọi yêu cầu đều bị ép sang
+    HITL dù số tiền nhỏ. Test nào muốn kiểm nhánh tự duyệt thì phải tự dọn trạng
+    thái trước, nếu không kết quả phụ thuộc vào việc đã chạy bao nhiêu test khác.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM refund_requests WHERE customer_id = %s "
+            "AND status IN ('AUTO_APPROVED','APPROVED') "
+            "AND created_at >= date_trunc('month', now())", (customer_id,))
+
+
 def _cleanup_rides(codes: list[str]) -> None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM rides WHERE ride_code = ANY(%s)", (codes,))
@@ -52,6 +67,7 @@ def _cleanup_rides(codes: list[str]) -> None:
 # Ngưỡng hoàn tiền — LLM không được quyết, business_config quyết (ADR-006)
 # ---------------------------------------------------------------------------
 def test_hoan_tien_duoi_nguong_thi_ai_tu_duyet(customer_id, conversation):
+    _clear_month_approvals(customer_id)
     threshold = get_business_config()["refund.auto_approve_max_vnd"]
     result = execute_tool("request_refund", {
         "conversation_id": conversation, "customer_id": customer_id,
@@ -251,3 +267,36 @@ def test_moi_loi_goi_tool_sinh_dung_mot_dong_log(customer_id, conversation):
         cur.execute("SELECT count(*) FROM tool_calls WHERE conversation_id = %s "
                     "AND tool_name = 'estimate_fare'", (conversation,))
         assert cur.fetchone()[0] == 1
+
+
+def test_vuot_han_muc_thang_thi_ep_sang_HITL_du_so_tien_nho(customer_id, conversation):
+    """Quy tắc chống gian lận của KB 03 mục 4, kiểm bằng cách chạy đủ 3 lần.
+
+    Test này ra đời từ một lần báo đỏ tưởng là lỗi: khách demo đã có 2 lần hoàn
+    tiền được duyệt trong tháng nên lần thứ 3 bị ép sang HITL — đúng quy tắc, chỉ
+    là chưa có ai kiểm nó một cách tường minh.
+    """
+    _clear_month_approvals(customer_id)
+    threshold = get_business_config()["refund.auto_approve_max_vnd"]
+    cap = get_business_config()["refund.auto_approve_max_per_month"]
+    small = threshold - 20_000
+    codes: list[str] = []
+
+    statuses = []
+    for index in range(cap + 1):
+        result = execute_tool("request_refund", {
+            "conversation_id": conversation, "customer_id": customer_id,
+            "ride_code": "XSM-DOUBLE-01", "amount": small - index,  # đổi số để khác idem key
+            "reason_code": "DOUBLE_CHARGE", "reason_detail": f"Lan thu {index + 1} trong thang",
+        }, conversation_id=conversation)
+        assert result.ok, result.error
+        statuses.append(result.data.status)
+        codes.append(result.data.refund_code)
+
+    assert statuses[:cap] == ["AUTO_APPROVED"] * cap, statuses
+    assert statuses[cap] == "PENDING_HITL", (
+        f"Lần thứ {cap + 1} trong tháng phải chuyển người duyệt dù số tiền nhỏ, "
+        f"nhưng nhận {statuses[cap]}"
+    )
+    _cleanup_refunds(codes)
+    _clear_month_approvals(customer_id)

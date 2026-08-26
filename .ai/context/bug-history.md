@@ -57,8 +57,8 @@
   1. **Recall@3 = 100% không có nghĩa là câu trả lời đúng.** Bộ eval hiện chỉ đo *truy hồi
      đúng file hay không* trên câu hỏi đơn lẻ, không đo *câu trả lời có trung thực với nguồn
      hay không*, và hoàn toàn không đo hội thoại nhiều lượt. Lỗi này lọt qua toàn bộ eval.
-  2. Cần bổ sung ở T-012: bộ eval đa lượt + chỉ số faithfulness (đối chiếu con số trong câu
-     trả lời với con số trong đoạn được truy hồi).
+  2. **ĐÃ LÀM ở T-012**: bộ eval đa lượt (8 kịch bản) + chỉ số trung thực với nguồn.
+     Kịch bản `M001` tái hiện đúng lỗi này và nay đạt — tức đã có lưới chặn hồi quy.
   3. Mọi tính năng RAG mới phải tự hỏi: "câu này đem đi tra thẳng có đủ nghĩa không?"
 
 ### [Ví Dụ] [2026-08-24] - Lỗi đường dẫn Windows khi chạy script PowerShell
