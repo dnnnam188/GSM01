@@ -68,6 +68,8 @@ GOLDEN_INTENTS: list[tuple[str, str, str, str]] = [
     ("bao nhiêu tiền?", "fare.inquiry", "cuc_ngan", ""),
     ("Phí hủy chuyến là bao nhiêu tiền?", "fare.inquiry", "chuan",
      "RANH GIỚI vs policy.faq: hỏi CON SỐ"),
+    ("Phí hủy chuyến với xe taxi là bao nhiêu tiền?", "fare.inquiry", "chuan",
+     "Router đoán nhầm policy.faq ngày 2026-08-26; thêm loại xe không đổi bản chất câu hỏi"),
     ("phu phi ban dem la bao nhieu", "fare.inquiry", "khong_dau", ""),
     ("giá xe máy từ Cầu Giấy ra sân bay Nội Bài tầm bao nhiêu ạ", "fare.inquiry", "chuan", ""),
     ("phí chờ tính sao, 1 tiếng bao nhiêu", "fare.inquiry", "chuan", ""),

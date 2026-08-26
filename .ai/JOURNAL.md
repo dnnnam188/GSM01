@@ -13,6 +13,309 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D6d: Chẩn Đoán Hạn Mức Gemini & Tự Giãn Nhịp (ADR-012)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: ADR-012 · phát hiện khoá Gemini bị vô hiệu
+
+### 🔍 Người dùng hỏi "hết hạn mức thì cấp key mới phải không?" — câu trả lời là KHÔNG
+Bảng hạn mức cho thấy: **RPM 18/15 (vượt)** nhưng **RPD 60/500** và **TPM 8,51K/250K**.
+Hạn mức ngày mới dùng 12%. Đây là giới hạn **theo phút**, tự hồi sau 60 giây — cấp khoá mới
+không giải quyết gì vì vấn đề nằm ở **nhịp gọi**, không phải tổng lượng.
+
+Nguyên nhân là lỗi trong code của tôi: bộ eval bắn ~**37 lần/phút** vào giới hạn 15, và chỉ
+sống sót nhờ thử lại + rơi sang provider dự phòng. **Lấy cơ chế chịu lỗi ra che một lỗi nhịp
+độ là dùng sai công cụ** — và chính đợt 429 dồn dập đó đã khiến tôi chẩn đoán nhầm lỗi 400 ở D6.
+
+### ✅ Đã làm được
+- `_RateLimiter`: cửa sổ trượt 60 giây, dùng chung toàn tiến trình, **rổ riêng cho mỗi model**,
+  chặn trước mọi lời gọi Gemini kể cả embedding. Có cả bản đồng bộ và bất đồng bộ.
+- Kiểm chứng: bắn 20 lượt liên tiếp → đo được **15,5 RPM**, đúng nhịp, không có 429 nào.
+- Ghi rõ một hệ quả dễ bỏ sót của ADR-010: router và bước trả lời **cùng dùng**
+  `gemini-3.5-flash-lite` nên **chia chung một rổ 15/phút** → trần ~**7 lượt hội thoại/phút**.
+
+### 🚨 Phát hiện ngoài dự kiến: khoá Gemini đã bị vô hiệu
+Trong lúc kiểm chứng rate limiter, cả 20 lượt đều do `tokenrouter` phục vụ chứ không phải
+Gemini. Truy ra: khoá trả **401 "invalid authentication credentials"**, kể cả trên endpoint
+`list-models` vốn **không tốn quota** — nên chắc chắn không phải chuyện hạn mức.
+
+- Khoá vẫn hoạt động bình thường lúc ~16:50 cùng ngày.
+- `.env` không bị sửa từ 16:48, tức giá trị khoá không đổi ở phía mình.
+- Khoá có tiền tố `AQ.` (53 ký tự), khác định dạng `AIza...` truyền thống.
+
+→ Khoá bị thu hồi/vô hiệu **ở phía Google**, không phải lỗi cấu hình.
+
+**Điểm sáng**: hệ thống vẫn phục vụ đủ 20/20 lượt nhờ TokenRouter. Đường lui làm ở D6c đã
+chứng minh giá trị trong một sự cố thật, không phải trong bài test giả.
+
+### 📁 File đã thay đổi
+- `src/backend/llm/client.py` — `_RateLimiter`, `GEMINI_RPM`
+- `.env`, `.env.example`, `render.yaml` — `GEMINI_RPM=15`
+- `tests/test_llm_config.py` — thêm test rate limiter; tách 401/429 khỏi lỗi cấu hình
+- `.ai/context/decisions.md` — ADR-012
+
+### ✅ Đã giải quyết (cùng ngày)
+Người dùng cấp khoá Gemini mới (vẫn định dạng `AQ.`, hoạt động bình thường):
+- `list-models` → 200 · router TTFT **763 ms** · answer TTFT **693 ms**
+- `tests.test_e2e_slice` → **28/28**, TTFT xấu nhất **1.308 ms**
+
+### 📐 Ngân sách 15 RPM — con số thực tế
+| Việc | Số lần gọi | Thời gian ở 15 RPM |
+|---|---|---|
+| Một lượt hội thoại | 2 (router + answer, chung rổ flash-lite) | trần **7,5 lượt/phút** |
+| Demo 5 phút | ~74 | thừa sức (demo thực tế chỉ ~15 lượt) |
+| Eval đầy đủ | 100 flash-lite + 30 embedding (rổ riêng) | **~7–8 phút** |
+
+**Rate limiter gần như không làm eval chậm đi** — trước khi có nó, eval cũng đã mất ~7,5 phút,
+chỉ khác là mất thêm thời gian vào các lần 429 rồi thử lại. Nói cách khác: 15 RPM đủ dùng
+cho toàn bộ phần việc còn lại của dự án.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. Cập nhật `GEMINI_API_KEY` mới **trên Render** (hiện mới đổi ở `.env` máy cá nhân).
+2. Nếu sau này cần thông lượng cao hơn 7,5 lượt/phút, hai cách hợp lệ: tách bước trả lời
+   sang `gemini-3.5-flash` để có rổ hạn mức riêng (đổi lại TTFT ~2,9s thay vì ~1,2s),
+   hoặc bật billing. Nhiều khoá **cùng một project không tăng hạn mức** vì quota tính theo project.
+
+### ➡️ Việc tiếp theo
+- Có khoá Gemini mới → chạy lại `tests.test_e2e_slice` và `eval.run_eval --only intent`.
+- **T-010** (token hoá PII) và **T-011** (HITL `interrupt()`).
+
+---
+
+## [2026-08-26] – D6c: Nối Provider Dự Phòng TokenRouter (ADR-011)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-009 · ADR-011
+
+### 📊 Kết quả
+`tests.test_e2e_slice` cục bộ: **28/28**, TTFT xấu nhất 1.223 ms · `pytest` **35/35** · `ruff` sạch.
+Đường lui đã kiểm chứng bằng cách **ép Gemini hỏng thật**: TokenRouter gánh được,
+TTFT 2.910 / 1.476 ms, cột `provider` ghi đúng `tokenrouter`.
+
+### ✅ Đã làm được
+Key TokenRouter chạy ngay (`GET /models` → 200, đúng 1 model `qwen/qwen3.8-max-free`).
+Nhưng nó là **model dòng reasoning**, và ba lần đo đầu tiên đều hỏng theo cách khác nhau:
+
+| Cấu hình | Kết quả |
+|---|---|
+| Mặc định | **TTFT 21.097 ms** — 150/165 token đầu ra là `reasoning_tokens` |
+| `max_tokens=300` + structured output | **0 ký tự nội dung**, 301 token đều là suy luận |
+| `enable_thinking=false` | API từ chối: *"Qwen3.8 requires thinking"* |
+| `reasoning_effort=low` + `max_tokens≥600` + json_schema | **1.464 / 1.397 ms**, ổn định |
+
+→ Ba tham số bắt buộc, thiếu bất kỳ cái nào là hỏng theo một kiểu riêng:
+`reasoning_effort=low` · `FALLBACK_MIN_MAX_TOKENS=800` · truyền `response_format` kèm schema.
+
+### 🐞 Lỗi tinh vi suýt lọt: đường lui mất hết slot
+Router chạy qua TokenRouter vẫn phân loại **đúng** intent, nên nhìn qua tưởng ổn. Nhưng slot
+trả về là `trip_id` và `item` thay vì `ride_code` và `item_description` — vì `_fallback_call`
+không truyền `response_format`, model tự bịa tên trường.
+
+Hậu quả thật: khi Gemini hỏng, agent vẫn hiểu đúng ý khách nhưng **hỏi lại mã chuyến mà khách
+vừa mới nói**. Đúng lúc hệ thống đang trục trặc thì trải nghiệm lại tệ thêm.
+
+Đã thêm `_to_json_schema()` chuyển schema kiểu Gemini (`"type": "OBJECT"`) sang JSON Schema
+chuẩn (`"type": "object"`) và truyền vào `response_format`. Kiểm lại: slot ra đúng
+`{'item_description': 'ví', 'ride_code': 'XSM-LOSTITEM-01'}`.
+
+Cũng lọc thêm giá trị `0` khỏi slot — model dự phòng hay điền `amount: 0` khi không biết.
+
+### 💰 Không cần mua $5 OpenAI nữa
+TokenRouter miễn phí và đã lấp đúng lỗ hổng. Tính ra $5 với `gpt-5.6-sol` chỉ đủ ~360 lượt,
+trong khi phần việc còn lại cần khoảng $19 — xem phân tích trong ADR-011.
+
+### 📁 File đã thay đổi
+- `src/backend/llm/client.py` — `_to_json_schema()`, `FALLBACK_EXTRA_BODY`,
+  `FALLBACK_MIN_MAX_TOKENS`, truyền schema sang provider dự phòng
+- `src/backend/agent/router.py` — lọc slot giá trị 0
+- `.env`, `.env.example`, `render.yaml` — cấu hình TokenRouter
+- `tests/test_llm_config.py` — thêm 4 test (6 tổng)
+- `.ai/context/decisions.md` — ADR-011
+
+### ⏳ Đang dở
+- T-009: vẫn chờ đổi `LLM_ANSWER_MODEL` + thêm 5 biến `FALLBACK_*` trên Render.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Trên dashboard Render cần đặt**: `LLM_ANSWER_MODEL=gemini-3.5-flash-lite` (ADR-010) và
+   5 biến `FALLBACK_*` (ADR-011). Rồi deploy lại và chạy e2e nhắm vào bản online.
+2. **Hai khoá API đã bị dán vào khung chat** (AgentRouter và TokenRouter) — thu hồi và cấp lại
+   sau khi xong dự án.
+3. TokenRouter **không dùng làm provider chính được**: TTFT đường trả lời dao động 1,3–6,9 giây.
+
+### ➡️ Việc tiếp theo
+- **T-010**: token hoá PII, đưa 5/20 → 0/20.
+- **T-011**: HITL bằng `interrupt()`.
+
+---
+
+## [2026-08-26] – D6b: Kiểm Chứng Bản Deploy, Sửa TTFT, Và Thử Key AgentRouter
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-009 (gần đóng) · phát sinh ADR-010
+
+### 📊 Kiểm chứng trên bản deploy thật
+`GSM_BASE=https://gsm01-api.onrender.com` → **25/28 đạt**. Toàn bộ nghiệp vụ chạy đúng trên
+môi trường thật: đăng nhập 2 vai trò, khách gọi dashboard CSKH → 403, WebSocket streaming,
+RAG, ghi `messages`/`tool_calls`, CSKH đọc được transcript + tool trace.
+
+Ba điểm hỏng đều là **TTFT: 4.156 ms và 3.609 ms**, vượt ngưỡng 3 giây.
+Cold start của Render đo được **22,7 giây** cho request đầu tiên — đúng như đã cảnh báo trong
+`docs/DEPLOY.md`.
+
+### ✅ Tìm ra và sửa được nguyên nhân TTFT (ADR-010)
+Đo đối chứng trên đúng prompt trả lời thật (~2.950 ký tự, 3 đoạn tri thức), mỗi model 3 lần:
+
+| Model | TTFT | Trung vị |
+|---|---|---|
+| `gemini-3.5-flash` | 3.017 / 2.791 / 2.951 ms | **2.951 ms** |
+| `gemini-3.5-flash-lite` | 1.243 / 1.203 / 1.467 ms | **1.243 ms** |
+
+Model trả lời chính là chỗ ngốn gần hết ngân sách. Đổi sang `flash-lite` → nhanh gấp **2,4 lần**.
+
+**Chất lượng không tụt**: kiểm 3 câu có đáp án số cụ thể (phí huỷ taxi 20.000đ, phí huỷ Bike
+10.000đ, hoàn tiền thẻ quốc tế 7–14 ngày) — **đúng cả 3**. Hợp lý, vì bước trả lời đã được neo
+chặt vào RAG và kết quả tool, đúng loại việc mà model nhỏ làm tốt.
+
+Chạy lại e2e ở cục bộ với model mới: **28/28, TTFT xấu nhất 1.370 ms.**
+
+### 🔑 Key AgentRouter chưa dùng được
+Người dùng cung cấp key AgentRouter (có 175$) và muốn dùng model `gpt-5.6-sol`.
+Base URL đúng là `https://agentrouter.org/v1` (chuẩn OpenAI). Đã thử **4 cách xác thực**:
+`Bearer` trên `/models`, `Bearer` trên `/chat/completions`, header `x-api-key`, và có/không
+User-Agent trình duyệt. **Cả 4 đều trả `401` với cùng thông báo `unauthorized client detected`**
+kèm link Discord hỗ trợ. Dừng thử ở đó để không phát tán key thêm.
+
+Vì `/models` không truy cập được nên **chưa xác nhận được model `gpt-5.6-sol` có tồn tại hay không**.
+
+### 🔧 Chuẩn bị sẵn để đổi provider chỉ bằng cấu hình
+Thay vì chờ, đã tổng quát hoá tầng dự phòng: `FALLBACK_BASE_URL` / `FALLBACK_MODEL` /
+`FALLBACK_PROVIDER_NAME` / `FALLBACK_API_KEY`. Mọi gateway theo chuẩn OpenAI đều dùng được mà
+**không phải sửa một dòng code nào**.
+
+Trong lúc làm việc này bắt được một cái bẫy sẽ nổ đúng lúc demo: cột `messages.provider` có
+ràng buộc `CHECK (provider IN ('gemini','openrouter'))`. Chỉ đổi biến môi trường sang
+`agentrouter` là **vỡ ngay ở bước ghi tin nhắn**, sau khi khách đã nhận xong câu trả lời.
+Đã gỡ ràng buộc và thêm test canh đúng chỗ đó.
+
+### 📁 File đã thay đổi
+- `src/backend/llm/client.py` — tầng dự phòng cấu hình được hoàn toàn qua biến môi trường
+- `src/backend/db/schema.sql` + DB thật — gỡ `CHECK` khoá cứng trên `messages.provider`
+- `.env`, `.env.example`, `render.yaml` — `LLM_ANSWER_MODEL` mới + 4 biến provider dự phòng
+- `tests/test_llm_config.py` — thêm 2 test: đổi provider bằng env, và cột provider không bị khoá
+- `.ai/context/decisions.md` — ADR-010
+
+### ⏳ Đang dở
+- T-009: chỉ còn chờ đổi `LLM_ANSWER_MODEL` trên Render rồi đo lại.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Đổi `LLM_ANSWER_MODEL=gemini-3.5-flash-lite` trên dashboard Render** rồi deploy lại.
+   Đây là việc duy nhất còn lại để T-009 đạt 28/28 trên môi trường thật.
+2. **Key AgentRouter trả 401 `unauthorized client detected`.** Cần kiểm tra lại key tại
+   `agentrouter.org/console/token`, hoặc hỏi kênh hỗ trợ của họ xem gateway có giới hạn client
+   nào được gọi không. Khi key chạy được thì chỉ cần đặt 4 biến `FALLBACK_*` là xong.
+3. **Key đã bị dán vào khung chat** — nên thu hồi và cấp key mới sau khi dùng xong, đề phòng
+   nhật ký phiên làm việc bị chia sẻ.
+4. OpenRouter vẫn `402 Payment Required` (hết credit). Nếu Gemini hết hạn mức lúc demo mà
+   AgentRouter chưa dùng được thì hệ thống không còn đường lui nào.
+
+### ➡️ Việc tiếp theo
+- **T-010**: token hoá PII, đưa 5/20 → 0/20. Nhớ đòn `template_leak` xuyên thủng cả hai tầng ở D3.
+- **T-011**: HITL bằng `interrupt()`; chỗ móc đã sẵn trong `tool_node` và `resume_thread_id`.
+
+---
+
+## [2026-08-26] – D6: LangGraph + 8 Tool Nghiệp Vụ Thật (T-004)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-004 ⏳ · phát sinh ADR-009
+
+### 📊 Kết quả kiểm chứng
+| Bộ kiểm | Kết quả |
+|---|---|
+| `pytest` (gồm 14 test tool trên DB thật) | **31/31 đạt** |
+| `tests.test_graph_scenarios` (7 kịch bản nghiệp vụ) | **26/26 đạt** |
+| `tests.test_e2e_slice` | **25/28** — 3 điểm chưa đạt, xem Vướng mắc |
+| `ruff` | sạch |
+
+### ✅ Đã làm được
+- **`tools/executor.py`** — 8 tool thật: xác thực Pydantic (LLM bịa tham số → `FATAL`
+  ngay, không lọt xuống DB), chống gọi trùng bằng `idempotency_key`, phân loại lỗi 3 nhánh,
+  mọi lời gọi ghi đúng một dòng `tool_calls`.
+- **`agent/graph.py`** — LangGraph 5 node (`route → retrieve/tools/clarify → answer`).
+  Điều phối tool bằng **luật tường minh** thay vì để LLM tự chọn: thêm một lượt gọi model để
+  chọn tool là phá ngân sách 3 giây, và bảng ánh xạ intent→tool thì kiểm thử được còn lựa chọn
+  của model thì không.
+- **Thiếu thông tin thì hỏi lại, không đoán bừa**: thiếu mã chuyến → agent liệt kê các chuyến
+  gần đây cho khách chọn, và **không** tạo ticket/không gọi tool ghi dữ liệu.
+- Bảng giá chuyển vào `business_config` (thêm 10 khoá, tổng 28) — `estimate_fare` không còn
+  hardcode con số nào (ADR-006).
+
+### 🔧 Sửa một lỗi thiết kế của chính mình (ADR-009)
+Bản đầu bắt router phải trích được `amount` rồi mới xử lý hoàn tiền. Chạy thử thì cùng một dạng
+câu, có lần trích được có lần không. Nhưng vấn đề thật sâu hơn: **bắt khách tự khai số tiền là
+sai cả về trải nghiệm lẫn về kiểm soát** — khách không biết mình được hoàn bao nhiêu, và ai
+cũng có thể khai một con số bất kỳ.
+
+Đã thay bằng `derive_refund_evidence()`: đối soát dữ liệu chuyến để tự xác định có đủ điều kiện
+không và được hoàn bao nhiêu. Kiểm trên cả 9 case seed, **đúng cả 9**, gồm **từ chối đúng** 3 case
+âm (`XSM-CANCELFEE-02` phí thu đúng, `XSM-DETOUR-02` chỉ vượt 13,9% chưa tới ngưỡng 30%,
+`XSM-LOSTITEM-01` không có dấu hiệu thu sai). Ba case âm này cài từ D2 giờ mới phát huy tác dụng.
+
+### 🐞 Lỗi nghiêm trọng nhất phiên này: cấu hình sai làm chết toàn hệ thống mà test vẫn xanh
+Mọi lời gọi Gemini trả `400 INVALID_ARGUMENT`; agent chỉ còn biết xin lỗi.
+
+**Tôi chẩn đoán sai lúc đầu.** Chạy 15 lần một request y hệt cho ra 10 lần 400 + 5 lần 429, nên
+tôi kết luận "Gemini báo cạn hạn mức bằng cả 400 lẫn 429" và đã sửa code coi 400 là tín hiệu hết
+hạn mức. Sau đó phát hiện `_gemini_body` có `"thinkingConfig": {"thinkingBudget": 0}` — tham số
+mà `gemini-3.5-flash-lite` **không nhận**. Đo đối chứng: không có `thinkingConfig` → 8/8 OK ·
+`thinkingBudget: 0` → **8/8 lỗi 400** · `thinkingLevel: "low"` → 8/8 OK.
+
+Đã đổi sang `thinkingLevel` và **hoàn nguyên** thay đổi coi 400 là hết hạn mức — 400 nghĩa là
+request sai, rơi sang provider dự phòng khi gặp 400 chỉ làm lỗi cấu hình bị giấu đi.
+
+Bài học đáng giá hơn cả bản vá: **chính cơ chế xuống cấp êm đã giấu lỗi**. Mọi test hoặc không
+gọi model, hoặc coi lỗi model là bình thường rồi trả câu xin lỗi — nên 100% lời gọi hỏng mà toàn
+bộ test vẫn xanh. Đã thêm `tests/test_llm_config.py`: một lời gọi API thật với đúng body của
+production, cộng một kiểm tra tĩnh chặn `thinkingBudget`.
+
+### 📁 File đã thay đổi
+- `src/backend/tools/executor.py`, `src/backend/agent/graph.py` — **mới**
+- `src/backend/agent/pipeline.py` — chuyển sang gọi graph
+- `src/backend/agent/router.py` — làm sắc ranh giới `fare.inquiry` vs `policy.faq`
+- `src/backend/llm/client.py` — sửa `thinkingConfig`, ghi rõ vì sao 400 KHÔNG phải tín hiệu quota
+- `src/backend/db/repository.py` — thêm `set_conversation_status`
+- `src/backend/db/seed.py` — thêm 10 khoá bảng giá vào `business_config`
+- `tests/test_tool_executor.py`, `tests/test_graph_scenarios.py`, `tests/test_llm_config.py` — **mới**
+- `eval/datasets/build_datasets.py` — golden set 80 → 81 câu
+- `.ai/context/decisions.md` (ADR-009), `bug-history.md`, `TASKS.md`
+
+### ⏳ Đang dở
+- T-004 chưa đóng: còn 3 điểm chưa đạt trong e2e (bên dưới).
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Ranh giới intent còn nhập nhằng**: `"Phí hủy chuyến với xe taxi là bao nhiêu tiền?"` →
+   router vẫn trả `policy.faq` thay vì `fare.inquiry`, kể cả sau khi bổ sung luật. Câu trả lời
+   cuối vẫn ĐÚNG (truy hồi đúng file, nêu đúng 20.000đ), nên tác động thực tế thấp — nhưng
+   đây là bằng chứng cho cảnh báo đã ghi ở D3: **bộ 80 câu do tôi tự soạn nên con số 100%
+   không phản ánh câu chữ ngoài bộ đó**. Đã bổ sung chính câu này vào golden set (81 câu),
+   **chưa chạy lại eval đầy đủ**.
+2. **TTFT dao động mạnh**: cùng một câu, lần đo được 1.172 ms, lần khác 3.854 ms — vượt ngưỡng.
+   Model trả lời `gemini-3.5-flash` đo ở D2 là ~2,0s, tức biên an toàn rất mỏng. T-012 cần cân
+   nhắc dùng `gemini-3.5-flash-lite` cho cả bước trả lời (đo được 0,9s) hoặc cắt ngắn prompt.
+3. **OpenRouter trả `402 Payment Required`** — tài khoản hết credit. Nghĩa là **đường lui của
+   ADR-001 hiện đang chết**. Nếu Gemini hết hạn mức lúc demo thì hệ thống chỉ còn biết xin lỗi.
+   Cần người dùng nạp credit OpenRouter, hoặc bật billing Gemini.
+4. **Chưa có URL bản deploy** nên chưa kiểm chứng được T-009 trên môi trường thật.
+
+### ➡️ Việc tiếp theo
+- **T-010**: token hoá PII trước khi vào context, đưa số ca rò rỉ từ **5/20 (raw) và 2/20
+  (masked) về 0/20**. Nhớ đòn `template_leak` xuyên thủng cả hai tầng ở D3.
+- **T-011**: HITL bằng `interrupt()` + checkpointer Postgres. Chỗ móc đã sẵn:
+  `tool_node` trả `pending_hitl`, `refund_requests.resume_thread_id` đã lưu đúng thread.
+- Chạy lại `eval.run_eval --only intent` trên golden set 81 câu.
+
+---
+
 ## [2026-08-26] – D4: Vertical Slice Chạy Đầu-Cuối Ở Cục Bộ (T-009, chưa deploy)
 
 - **Agent / Người thực hiện**: Claude Code

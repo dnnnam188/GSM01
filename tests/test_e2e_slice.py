@@ -172,8 +172,17 @@ async def main() -> int:
         after = r.json()
         check(after["total_messages"] > summary_before["total_messages"],
               "Số message tăng lên", f"{summary_before['total_messages']} → {after['total_messages']}")
-        check(after["ttft_p95_ms"] is not None and after["ttft_p95_ms"] < 3000,
-              "TTFT p95 trong DB < 3000 ms", f"{after['ttft_p95_ms']} ms")
+    # p95 của CHÍNH hội thoại vừa chạy. Chỉ số toàn lịch sử trên dashboard gộp cả
+    # dữ liệu cũ nên không dùng để nghiệm thu một lần chạy được.
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT max(ttft_ms) FROM messages WHERE conversation_id = %s "
+            "AND ttft_ms IS NOT NULL", (conversation_id,))
+        worst = cur.fetchone()[0]
+    check(worst is not None and worst < 3000,
+          "TTFT chậm nhất của lượt vừa chạy < 3000 ms", f"{worst} ms")
+
+    async with httpx.AsyncClient(timeout=30) as http:
 
         r = await http.get(f"{BASE}/api/conversations/{conversation_id}/transcript",
                            headers={"Authorization": f"Bearer {agent['access_token']}"})

@@ -46,19 +46,19 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-- **T-009** — Vertical slice + deploy · `P0` · _Người cầm: Claude Code_
-  - **Đã làm tới đâu**: Chạy được đầu-cuối **ở cục bộ**, 28/28 phép kiểm đạt
-    (`.venv/Scripts/python.exe -m tests.test_e2e_slice`). Có JWT 2 vai trò, WebSocket
-    streaming, RAG, ghi `messages`/`tool_calls`, giao diện Next.js build sạch.
-    Đã chuẩn bị sẵn `render.yaml`, `requirements.txt`, `docs/DEPLOY.md`.
-  - **Bước tiếp theo — CẦN NGƯỜI DÙNG LÀM**: bấm deploy. Không tự làm được vì cần đăng nhập
-    tài khoản Render và Vercel. Làm theo `docs/DEPLOY.md`, rồi chạy lại kịch bản kiểm chứng
-    nhắm vào bản online:
-    `GSM_BASE=https://<app>.onrender.com GSM_WS=wss://<app>.onrender.com`
-    `.venv/Scripts/python.exe -m tests.test_e2e_slice` — phải đạt 28/28.
-  - **Vướng mắc**: Hạn mức gói free của Gemini đã cạn trong lúc chạy eval, nên các phép đo
-    TTFT cuối phiên rơi qua OpenRouter và chậm hơn (4,9s ở một lượt). **Phải đo lại khi hạn
-    mức hồi** trước khi kết luận về ngưỡng 3 giây.
+- **T-009** — Vertical slice + deploy · `P0` · _Chờ người dùng một thao tác_
+  - **Đã kiểm chứng trên bản deploy thật** (`https://gsm01-api.onrender.com`): **25/28**.
+    Ba điểm hỏng đều là TTFT (4.156 ms / 3.609 ms) — nguyên nhân đã tìm ra và đã sửa ở cục bộ.
+  - **Còn lại**: trên dashboard Render đặt `LLM_ANSWER_MODEL=gemini-3.5-flash-lite` (ADR-010)
+    **,** `GEMINI_API_KEY` mới, `GEMINI_RPM=15` (ADR-012) **và** 5 biến `FALLBACK_*`
+    cho TokenRouter (ADR-011), deploy lại, rồi chạy:
+    `GSM_BASE=https://gsm01-api.onrender.com GSM_WS=wss://gsm01-api.onrender.com`
+    `.venv/Scripts/python.exe -m tests.test_e2e_slice` — cần 28/28 để đóng task.
+    Ở cục bộ với model mới đã đạt **28/28, TTFT xấu nhất 1.370 ms**.
+
+- **T-004** — LangGraph + 8 tool thật · `P0` · _Người cầm: Claude Code_
+  - Graph + 8 tool đã chạy; 33 test pass; 26/26 kịch bản nghiệp vụ.
+  - **Bước tiếp theo**: T-010 (token hoá PII 5/20 → 0/20) rồi T-011 (HITL `interrupt()`).
 
 ---
 
@@ -66,7 +66,7 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| T-004 | LangGraph state & tool thật | D6–D8 | P0 | Thay ruột `pipeline.run_turn()` bằng graph; **nối 8 tool thật** (hiện chưa tool nào chạy được); slot-filling hỏi lại khi thiếu | Router + hợp đồng sự kiện đã có, giữ nguyên. Đo lại bằng T-008 |
+| ~~T-004~~ | ~~LangGraph state & tool thật~~ · đang ở mục ⏳ | D6–D8 | P0 | Thay ruột `pipeline.run_turn()` bằng graph; **nối 8 tool thật** (hiện chưa tool nào chạy được); slot-filling hỏi lại khi thiếu | Router + hợp đồng sự kiện đã có, giữ nguyên. Đo lại bằng T-008 |
 | T-010 | Guardrail PII + fallback | D6–D8 | P0 | Đưa số ca lộ PII từ **5/20 (raw) và 2/20 (masked) về 0/20** bằng token hoá trước khi vào context; tắt DB/LLM → agent xin lỗi, không văng stacktrace | ADR-004. Đã đo baseline ở D3, xem JOURNAL. **Không được cắt** |
 | T-011 | **HITL duyệt hoàn tiền** | D7–D8 | P0 | Hoàn > ngưỡng → `interrupt()`; CSKH duyệt → graph resume → khách nhận thông báo trên đúng phiên cũ | ADR-003. **Không được cắt** |
 | T-005 | Backend API cho dashboard | D9 | P0 | Endpoint hàng đợi HITL, transcript + tool trace, duyệt/từ chối (từ chối bắt buộc có lý do), thống kê | Phân quyền: `customer` gọi → 403 |

@@ -12,6 +12,139 @@
 
 ---
 
+## ADR-012 — Tự giãn nhịp gọi Gemini phía client (15 lần/phút, theo từng model)
+
+- **Ngày**: 2026-08-26
+- **Trạng thái**: `Đang áp dụng`
+- **Bối cảnh**: Bảng hạn mức của Google cho thấy `Gemini 3.5 Flash Lite` ở mức
+  **RPM 18/15 (vượt)** trong khi **RPD chỉ 60/500** và **TPM 8,51K/250K**. Tức là dự án
+  chưa hề cạn hạn mức ngày — nó chỉ **bắn quá nhanh trong một phút**.
+  Bộ eval đang gọi khoảng **37 lần/phút** vào giới hạn 15, và chỉ "sống sót" nhờ cơ chế
+  thử lại và rơi sang provider dự phòng.
+- **Quyết định**: Thêm `_RateLimiter` (cửa sổ trượt 60 giây, dùng chung toàn tiến trình,
+  **một rổ riêng cho mỗi model**) chặn trước mọi lời gọi Gemini, kể cả embedding.
+  Ngưỡng đọc từ `GEMINI_RPM`, mặc định 15.
+- **Lý do**:
+  - Chờ chủ động rẻ hơn hẳn so với ăn 429 rồi thử lại: mỗi lần 429 tốn một vòng khứ hồi
+    mạng, một khoảng backoff, rồi vẫn phải gọi lại.
+  - **Lấy cơ chế chịu lỗi ra để che một lỗi nhịp độ là dùng sai công cụ.** Provider dự phòng
+    phải để dành cho lúc Gemini thật sự hỏng, không phải để gánh việc mình tự bắn quá tay.
+  - Chính đợt 429 dồn dập này đã khiến tôi chẩn đoán nhầm nguyên nhân của lỗi 400 ở D6.
+- **Hệ quả cần biết**: hạn mức tính **theo từng model**. Từ ADR-010, router và bước trả lời
+  **cùng dùng** `gemini-3.5-flash-lite`, nên chúng **chia chung một rổ 15 lần/phút**.
+  Mỗi lượt hội thoại tiêu 2 lần gọi → trần khoảng **7 lượt/phút**.
+  Đủ cho demo và cho eval, nhưng nếu cần thông lượng cao hơn thì tách bước trả lời sang
+  `gemini-3.5-flash` để có rổ riêng — đổi lại TTFT tăng từ ~1,2s lên ~2,9s (ADR-010).
+- **Phương án đã loại**:
+  - Dùng nhiều API key để lách hạn mức — loại vì hạn mức tính theo project chứ không theo
+    khoá, nên nhiều khoá cùng project không tăng thêm gì; và đây không phải cách xử lý
+    đúng vấn đề.
+  - Chỉ tăng `--delay` của eval — loại vì chỉ vá riêng bộ eval, còn máy chủ thật vẫn bắn tự do.
+
+---
+
+## ADR-011 — Provider dự phòng: TokenRouter (`qwen/qwen3.8-max-free`)
+
+- **Ngày**: 2026-08-26
+- **Trạng thái**: `Đang áp dụng` — thay phần chọn provider dự phòng của ADR-001.
+- **Bối cảnh**: Đường lui của ADR-001 đã chết: OpenRouter trả `402 Payment Required`
+  (hết credit), AgentRouter trả `401 unauthorized client detected` với cả 4 cách xác thực.
+  Không có đường lui nghĩa là Gemini hết hạn mức lúc demo thì agent chỉ còn biết xin lỗi.
+- **Quyết định**: Dùng TokenRouter (`https://api.tokenrouter.com/v1`, chuẩn OpenAI) với
+  `qwen/qwen3.8-max-free` làm **provider dự phòng**. Gemini vẫn là chính.
+- **Số đo thực tế** (mỗi cấu hình 2 lần):
+
+  | Cấu hình | TTFT | Ghi chú |
+  |---|---|---|
+  | Mặc định (không chỉnh gì) | **21.097 ms** | 150/165 token đầu ra là `reasoning_tokens` |
+  | `max_tokens=300` + structured output | không ra chữ nào | 301 reasoning token, **0 ký tự nội dung** |
+  | `reasoning_effort=low`, trả lời tự do | 2.160 / 5.790 ms | dao động mạnh |
+  | `reasoning_effort=low` + `json_schema`, `max_tokens≥600` | **1.464 / 1.397 ms** | ổn định |
+  | Qua đường lui thật (ép Gemini hỏng) | **2.910 / 1.476 ms** | |
+
+- **Lý do**:
+  - **Miễn phí** — giải quyết đúng lỗ hổng mà không tiêu $5 nào.
+  - Ổn định ở đường router (structured output ~1,4s), chấp nhận được ở đường trả lời.
+  - Không bịa số liệu khi thiếu ngữ cảnh: hỏi phí huỷ mà không đưa tri thức thì nó trả
+    "chưa có thông tin chính xác" thay vì đoán một con số.
+- **Vì sao KHÔNG làm provider chính**: TTFT đường trả lời dao động 1,3–6,9 giây, tức có lúc
+  vượt gấp đôi ngưỡng 3 giây. Gemini Flash-Lite đo được 1,2 giây và ổn định hơn hẳn.
+- **Phương án đã loại**:
+  - Mua $5 API OpenAI làm đường lui — loại vì TokenRouter miễn phí đã đủ. Tính ra $5 với
+    `gpt-5.6-sol` chỉ đủ ~360 lượt, còn phần việc còn lại của dự án cần khoảng $19.
+  - `enable_thinking=false` để tắt suy luận — **API từ chối**: *"Qwen3.8 open text checkpoints
+    require thinking"*. Chỉ hạ được xuống `reasoning_effort=low`.
+  - Bỏ hẳn provider dự phòng — loại vì đó chính là hạng mục "fallback khi lỗi" của đề bài.
+- **Hệ quả — ba tham số bắt buộc, thiếu là hỏng**:
+  1. `FALLBACK_EXTRA_BODY={"reasoning_effort":"low"}` — thiếu thì TTFT là 21 giây.
+  2. `FALLBACK_MIN_MAX_TOKENS=800` — thiếu thì phần suy luận nuốt hết hạn mức và trả về **rỗng**.
+  3. Phải truyền `response_format` kèm schema đã chuyển sang JSON Schema chuẩn
+     (`_to_json_schema`). Thiếu thì model tự bịa tên trường (`trip_id` thay `ride_code`),
+     slot rơi hết, và agent hỏi lại khách thông tin khách vừa mới nói.
+- **Cảnh báo**: khoá đã bị dán vào khung chat — nên thu hồi và cấp lại sau khi xong dự án.
+
+---
+
+## ADR-010 — Dùng `gemini-3.5-flash-lite` cho CẢ bước trả lời (thay `gemini-3.5-flash`)
+
+- **Ngày**: 2026-08-26
+- **Trạng thái**: `Đang áp dụng` — thay phần chọn model trả lời của ADR-008, phần còn lại giữ nguyên.
+- **Bối cảnh**: Kiểm chứng trên bản đã deploy (Render, vùng Singapore) cho TTFT **4.156 ms** và
+  **3.609 ms** — vượt ngưỡng 3 giây của đề bài. Ở máy cục bộ cùng prompt đó cũng đã sát mép.
+  Đo đối chứng trên đúng prompt trả lời thật (~2.950 ký tự, gồm 3 đoạn tri thức):
+
+  | Model | TTFT 3 lần | Trung vị |
+  |---|---|---|
+  | `gemini-3.5-flash` | 3.017 / 2.791 / 2.951 ms | **2.951 ms** |
+  | `gemini-3.5-flash-lite` | 1.243 / 1.203 / 1.467 ms | **1.243 ms** |
+
+- **Quyết định**: `LLM_ANSWER_MODEL=gemini-3.5-flash-lite`. Router vẫn là `gemini-3.5-flash-lite`
+  như ADR-008. Tức cả hai bước dùng chung một model.
+- **Lý do**:
+  - Nhanh hơn **2,4 lần**, đưa TTFT từ sát ngưỡng xuống còn khoảng một phần ba ngân sách.
+    Biên an toàn này là thứ cần thiết vì Render free tier và đường mạng tới Gemini đều biến động.
+  - **Chất lượng không tụt ở tác vụ này.** Bước trả lời đã được neo chặt vào RAG và kết quả tool
+    trong prompt — đây đúng là loại việc mà model nhỏ làm tốt. Kiểm 3 câu có đáp án số cụ thể
+    (phí huỷ taxi 20.000đ, phí huỷ Bike 10.000đ, hoàn tiền thẻ quốc tế 7–14 ngày): **đúng cả 3**.
+  - Rẻ hơn, giúp ngân sách token của gói free đi xa hơn.
+- **Phương án đã loại**:
+  - Giữ `gemini-3.5-flash` và cắt ngắn prompt — loại vì cắt tri thức truy hồi sẽ làm hại độ chính
+    xác, mà vẫn chưa chắc đủ để về dưới 3 giây.
+  - Nâng gói Render để bớt nghẽn CPU — loại vì phần lớn độ trễ nằm ở phía model, không phải CPU.
+- **Hệ quả**:
+  - Phải đổi biến `LLM_ANSWER_MODEL` **trên dashboard Render**, không chỉ ở `.env` máy cá nhân.
+  - Nếu sau này thêm tác vụ suy luận nhiều bước không có RAG neo lại, phải đo lại chất lượng
+    trước khi vẫn dùng flash-lite cho tác vụ đó.
+
+---
+
+## ADR-009 — Số tiền hoàn do hệ thống suy ra từ bằng chứng, không lấy theo lời khai của khách
+
+- **Ngày**: 2026-08-26
+- **Trạng thái**: `Đang áp dụng`
+- **Bối cảnh**: Bản đầu của graph bắt buộc router phải trích được slot `amount` rồi mới
+  xử lý hoàn tiền; thiếu thì hỏi lại khách. Chạy thử thấy hai vấn đề: (1) LLM trích số
+  tiền không ổn định — cùng một dạng câu, có lần ra `amount`, có lần không; (2) quan trọng
+  hơn, **thiết kế đó sai về bản chất**: khách thường không biết mình được hoàn bao nhiêu,
+  và để khách tự khai số tiền là mở đường cho gian lận.
+- **Quyết định**: `derive_refund_evidence(ride_code)` đối soát dữ liệu chuyến và tự xác định
+  khách có đủ điều kiện hay không, được hoàn bao nhiêu, theo thứ tự: thu tiền trùng → phí huỷ
+  thu sai → đi vòng vượt ngưỡng → chênh lệch cước → gián đoạn dịch vụ. Trả `None` nghĩa là
+  **không đủ điều kiện**, và đó là kết quả hợp lệ. Lời khai của khách chỉ dùng làm ngữ cảnh
+  ghi vào `reason_detail`, không dùng làm số tiền.
+- **Lý do**: Cùng một tinh thần với ADR-005 và ADR-006 — thứ gì mất tiền thật thì không để
+  cho LLM hay cho lời khai quyết định. Ngoài ra nó biến các case âm trong seed
+  (`XSM-DETOUR-02`, `XSM-CANCELFEE-02`) thành thứ kiểm chứng được: agent phải **từ chối đúng**,
+  chứ không chỉ biết đồng ý đúng.
+- **Phương án đã loại**:
+  - Lấy `amount` từ slot của router — loại vì không ổn định và vì mời gọi gian lận.
+  - Hỏi lại khách số tiền — loại vì khách không có cách nào biết, và làm hỏng trải nghiệm.
+  - Cho LLM tự tính từ dữ liệu chuyến — loại vì số học trên tiền không nên nằm trong model.
+- **Hệ quả**: Thêm một tool ảo `refund_eligibility` trong tool trace để CSKH thấy được căn cứ
+  đối soát. Mỗi lý do hoàn tiền mới phải bổ sung một nhánh trong `derive_refund_evidence`.
+
+---
+
 ## ADR-008 — Ghim `gemini-3.5-flash-lite` cho router và `gemini-3.5-flash` cho trả lời
 
 - **Ngày**: 2026-08-26

@@ -14,6 +14,30 @@
 
 ## Danh Sách Lỗi Đã Xử Lý
 
+### [2026-08-26] - `thinkingBudget` sai tham số làm chết toàn bộ lời gọi LLM, không test nào bắt được
+- **Hiện tượng**: Mọi lời gọi Gemini trả `400 INVALID_ARGUMENT`. Agent chỉ còn trả câu xin lỗi.
+  Lời gọi trần (không schema, không system) thì chạy, nên ban đầu nghi oan cho `responseSchema`.
+- **Chẩn đoán sai lúc đầu**: Chạy 15 lần một request y hệt cho ra 10 lần 400 + 5 lần 429, nên
+  tôi kết luận "Gemini báo cạn hạn mức bằng cả 400 lẫn 429" và đã sửa code coi 400 là tín hiệu
+  hết hạn mức. **Kết luận đó sai.** Các lần 429 là quota thật, còn các lần 400 đến từ nguyên
+  nhân khác hẳn — và việc trộn hai thứ suýt nữa che mất lỗi thật.
+- **Nguyên nhân cốt lõi**: `_gemini_body` có `"thinkingConfig": {"thinkingBudget": 0}`.
+  Model `gemini-3.5-flash-lite` **không nhận** `thinkingBudget`. Đo đối chứng:
+  không có `thinkingConfig` → 8/8 thành công · `thinkingBudget: 0` → **8/8 lỗi 400** ·
+  `thinkingLevel: "low"` → 8/8 thành công.
+- **Giải pháp xử lý**: Đổi sang `thinkingLevel: "low"` trong `src/backend/llm/client.py`.
+  Hoàn nguyên thay đổi coi 400 là hết hạn mức — 400 nghĩa là request sai, và rơi sang provider
+  dự phòng khi gặp 400 chỉ làm lỗi cấu hình bị giấu đi.
+- **Lưu ý phòng ngừa**:
+  1. **Cơ chế xuống cấp êm đã giấu lỗi.** Toàn bộ test khác hoặc không gọi model, hoặc coi lỗi
+     model là chuyện bình thường rồi trả câu xin lỗi — nên 100% lời gọi hỏng mà mọi test vẫn xanh.
+     Đã thêm `tests/test_llm_config.py` gọi API thật đúng một lần với chính body của production,
+     cộng một kiểm tra tĩnh chặn `thinkingBudget`.
+  2. Khi thấy lỗi lạ, **đối chứng có/không từng tham số** trước khi kết luận về hạ tầng.
+  3. Đừng suy ra nguyên nhân từ tỉ lệ lỗi. 10/15 lần 400 trông rất giống giới hạn hệ thống,
+     nhưng thực ra là 100% các lời gọi đi qua đúng một đoạn code sai.
+
+
 ### [2026-08-26] - RAG đa lượt trả lời sai số liệu vì truy hồi bằng câu hỏi thô
 - **Hiện tượng**: Lượt 1 khách hỏi "Phí hủy chuyến với xe taxi là bao nhiêu?" → trả lời đúng
   20.000đ. Lượt 2 khách hỏi tiếp "Thế còn xe máy thì sao?" → agent trả lời **"phí hủy chuyến

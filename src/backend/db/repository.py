@@ -151,3 +151,10 @@ def get_business_config() -> dict[str, Any]:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("SELECT config_key, config_value, value_type FROM business_config")
         return {k: casts.get(t, str)(v) for k, v, t in cur.fetchall()}
+
+
+def set_conversation_status(conversation_id: str, status: str) -> None:
+    """`WAITING_HUMAN` là tín hiệu cho dashboard CSKH biết ca này đang chờ người duyệt."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE conversations SET status = %s, last_activity_at = now() "
+                    "WHERE id = %s", (status, conversation_id))

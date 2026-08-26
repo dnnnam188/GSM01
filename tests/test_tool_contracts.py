@@ -105,7 +105,7 @@ def test_registry_phu_het_10_intent():
 
 # --- Bộ dữ liệu eval: kiểm tra tính toàn vẹn, không gọi model ---------------
 
-def test_golden_set_du_80_cau_va_dung_10_nhan():
+def test_golden_set_du_so_cau_va_dung_10_nhan():
     import json
     from pathlib import Path
 
@@ -113,7 +113,9 @@ def test_golden_set_du_80_cau_va_dung_10_nhan():
 
     rows = [json.loads(ln) for ln in
             Path("eval/datasets/golden_intents.jsonl").read_text(encoding="utf-8").splitlines() if ln]
-    assert len(rows) == 80
+    # Bộ này CHỈ ĐƯỢC PHÉP lớn lên: mỗi câu router đoán sai đều được bổ sung vào đây
+    # theo quy trình ở docs/intent-taxonomy.md mục 4.
+    assert len(rows) >= 80
     labels = {r["intent"] for r in rows}
     assert labels <= set(INTENTS), labels - set(INTENTS)
     assert labels == set(INTENTS), f"Nhãn chưa có câu nào: {set(INTENTS) - labels}"
