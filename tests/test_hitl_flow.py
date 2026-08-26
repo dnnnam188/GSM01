@@ -180,6 +180,48 @@ async def main() -> int:
                             headers=agent_headers, json={"approved": True})
         check(r.status_code == 409, "Duyệt trùng → 409", str(r.status_code))
 
+    print("\n8. Ca không còn checkpoint để đánh thức — quyết định KHÔNG được mất")
+    # Dựng ca chờ duyệt bằng SQL, tức không có checkpoint LangGraph nào. Trước khi
+    # vá, đường này trả HTTP 500 SAU KHI đã ghi quyết định vào DB — hệ thống ghi
+    # nhận đã duyệt mà khách không hề được báo. Đó là kiểu hỏng tệ nhất: im lặng
+    # và lệch dữ liệu.
+    orphan = f"RF-ORPHAN-{uuid.uuid4().hex[:6].upper()}"
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE email = 'demo.customer@gsm.vn'")
+        customer_uuid = cur.fetchone()[0]
+        cur.execute("INSERT INTO conversations (customer_id, thread_id, status) "
+                    "VALUES (%s, %s, 'WAITING_HUMAN') RETURNING id",
+                    (customer_uuid, f"orphan-{uuid.uuid4().hex[:8]}"))
+        orphan_conv = str(cur.fetchone()[0])
+        cur.execute(
+            "INSERT INTO refund_requests (refund_code, customer_id, conversation_id, amount, "
+            "reason_code, reason_detail, status, resume_thread_id, idempotency_key) "
+            "VALUES (%s,%s,%s,%s,'DOUBLE_CHARGE','Ca khong co checkpoint',"
+            "'PENDING_HITL',%s,%s)",
+            (orphan, customer_uuid, orphan_conv, 88_000, orphan_conv, f"orphan:{orphan}"))
+
+    async with httpx.AsyncClient(timeout=150) as http:
+        r = await http.post(f"{BASE}/api/hitl/{orphan}/decide", headers=agent_headers,
+                            json={"approved": True, "reason": "Doi soat xong"})
+    check(r.status_code == 200, "Không sập khi không đánh thức được graph", str(r.status_code))
+    if r.status_code == 200:
+        body = r.json()
+        check(body["status"] == "APPROVED", "Quyết định vẫn được ghi nhận")
+        check(body["resumed"] is False, "Báo trung thực là graph KHÔNG chạy tiếp được")
+        check(bool(body.get("message")), "Khách vẫn nhận được thông báo")
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT status FROM refund_requests WHERE refund_code = %s", (orphan,))
+        check(cur.fetchone()[0] == "APPROVED", "DB ghi APPROVED, không mất quyết định")
+        cur.execute("SELECT count(*) FROM tool_calls WHERE conversation_id = %s "
+                    "AND tool_name = 'resume_graph' AND status = 'ERROR'", (orphan_conv,))
+        check(cur.fetchone()[0] == 1, "Sự cố đánh thức được ghi lại để truy vết")
+        cur.execute("DELETE FROM audit_log WHERE entity_id = %s", (orphan,))
+        cur.execute("DELETE FROM refund_requests WHERE refund_code = %s", (orphan,))
+        cur.execute("DELETE FROM tool_calls WHERE conversation_id = %s", (orphan_conv,))
+        cur.execute("DELETE FROM messages WHERE conversation_id = %s", (orphan_conv,))
+        cur.execute("DELETE FROM conversations WHERE id = %s", (orphan_conv,))
+
     passed = sum(1 for ok, _ in results if ok)
     print("\n" + "=" * 74)
     print(f"  {passed}/{len(results)} phép kiểm đạt")
