@@ -14,6 +14,41 @@
 
 ## Danh Sách Lỗi Đã Xử Lý
 
+### [2026-08-27] - Kịch bản HITL đỏ trong khi sản phẩm vẫn đúng: `interrupt()` huỷ phần ghi state của node
+- **Hiện tượng**: Mục 4 của `test_graph_scenarios` đỏ hai phép kiểm — "gọi request_refund" và
+  "request_refund chạy được" — dù luồng HITL trên app chạy hoàn toàn bình thường. Ban đầu tôi
+  **quy oan cho việc cạn hạn mức Gemini**; sau khi nạp key còn quota thì nó vẫn đỏ y nguyên.
+- **Nguyên nhân cốt lõi**: `tool_node` gọi `run("request_refund", ...)` rồi mới gọi `interrupt()`.
+  `interrupt()` **ném ra ngoài**, nên dòng `return {"tool_results": calls, ...}` không bao giờ
+  chạy. LangGraph huỷ toàn bộ phần ghi state của task đang treo, vì vậy `tool_results` và
+  `pending_hitl` rỗng **là đúng đặc tả**. Bài test lại đi đọc đúng hai trường đó.
+- **Giải pháp xử lý**: Mục 4 nay kiểm `__interrupt__` qua `interrupt_payload()` — đúng thứ
+  `pipeline.run_turn` đọc — cộng thêm kiểm dòng `refund_requests` trong DB đã ở `PENDING_HITL`.
+  Không sửa gì trong `src/`, vì sản phẩm không sai. 34/34.
+- **Lưu ý phòng ngừa**: Với node có `interrupt()`, **đừng bao giờ** kiểm state trả về của node đó
+  — nó không tồn tại. Kiểm ở hai chỗ còn thật: nội dung điểm dừng, và dấu vết đã ghi xuống DB.
+  Bài học lặp lại lần thứ năm: test đỏ chưa chắc sản phẩm sai, và đoán nguyên nhân (hạn mức) thay
+  vì đo (in ra khoá của state) làm mất nguyên một lượt.
+
+### [2026-08-26] - Agent hỏi lại một câu y hệt mãi không thoát, sau khi gắn checkpointer
+- **Hiện tượng**: Khách nói "Tôi để quên ví trên xe" → agent hỏi "chuyến nào ạ?" → khách trả lời
+  "XSM-ACTIVE-02" → agent **hỏi lại đúng câu đó**, lặp vô hạn. Trên màn hình còn thấy huy hiệu
+  các bước của lượt 1 dính sang lượt 2. Không test nào đỏ, vì mọi kịch bản khi đó đều chỉ có
+  **một lượt**.
+- **Nguyên nhân cốt lõi**: Hai lỗi cùng gốc, đều do checkpointer của T-011 giữ state qua các lượt.
+  1. `tool_results` khai báo `Annotated[list, _merge_list]` — reducer **cộng dồn**. Truyền `[]`
+     cho lượt mới không xoá được gì cả, nó chỉ nối thêm vào danh sách cũ.
+  2. Các trường tính theo lượt (`clarify_question`, `answer_prompt`, `slots`, `chunks`…) nằm
+     nguyên trong checkpoint. `pipeline.run_turn` thấy `clarify_question` cũ còn đó nên luôn
+     rẽ vào nhánh hỏi lại, bất kể lượt mới đã đủ thông tin.
+- **Giải pháp xử lý**: Bỏ reducer, để `tool_results` ghi đè bình thường; `run_graph()` khởi tạo
+  lại **toàn bộ** trường theo lượt. Cố ý **không** làm vậy trong `resume_graph()` — luồng HITL
+  phải dùng lại đúng state đang treo. Tệp: `src/backend/agent/graph.py`.
+- **Lưu ý phòng ngừa**: Checkpointer biến state thành **dữ liệu sống dai**. Với mỗi trường trong
+  state phải trả lời: nó thuộc về *hội thoại* hay thuộc về *một lượt*? Trường theo lượt bắt buộc
+  phải bị xoá khi vào lượt mới. Và kịch bản kiểm thử một lượt **không bao giờ** bắt được lớp lỗi
+  này — đã thêm kịch bản 8 (hai lượt) trong `tests/test_graph_scenarios.py`.
+
 ### [2026-08-26] - `thinkingBudget` sai tham số làm chết toàn bộ lời gọi LLM, không test nào bắt được
 - **Hiện tượng**: Mọi lời gọi Gemini trả `400 INVALID_ARGUMENT`. Agent chỉ còn trả câu xin lỗi.
   Lời gọi trần (không schema, không system) thì chạy, nên ban đầu nghi oan cho `responseSchema`.

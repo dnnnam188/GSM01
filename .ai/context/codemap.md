@@ -24,6 +24,8 @@
 | Frontend | `src/frontend/` (Next.js 15) | ✅ `npm run dev` trong `src/frontend/` |
 | Cấu hình deploy | `render.yaml`, `requirements.txt`, `docs/DEPLOY.md` | ✅ Sẵn sàng, chưa bấm deploy |
 | Bộ eval | `eval/run_eval.py` | ✅ Đã có, chạy ra số thật |
+| Kịch bản demo 5 phút | `docs/DEMO.md` | ✅ Kèm cách xử lý sự cố và câu hỏi hay gặp |
+| Đưa dữ liệu về trạng thái demo | `scripts/demo_reset.py` | ✅ **Chạy trước mỗi lần trình bày** |
 | Biến môi trường | `.env.example` | ✅ Đã có |
 | Phụ thuộc Python | `pyproject.toml` | ✅ Đã có (`uv`, venv tại `.venv/`) |
 
@@ -107,6 +109,8 @@ eval/
 | `uvicorn` chạy không có `--reload` | Sửa code xong mà không khởi động lại thì test vẫn chạy code cũ — đã mất một vòng debug vì việc này | Dùng `run_dev.py`, và nhớ khởi động lại sau khi sửa |
 | `src/backend/agent/graph.py` → `tool_node` | `interrupt()` khiến node chạy LẠI TỪ ĐẦU khi resume | Mọi tool ghi trong node này phải có idempotency, nếu không mỗi lần duyệt là một bản ghi mới |
 | `src/backend/api/hub.py` | Sổ kết nối nằm trong bộ nhớ một tiến trình | Chạy nhiều worker là khách không nhận được kết quả duyệt |
+| `scripts/demo_reset.py` | Xoá hội thoại theo tiền tố `thread_id` | Thêm tiền tố test mới thì phải bổ sung vào `TEST_THREAD_PREFIXES`, kể cả tiền tố do chính script sinh ra |
+| `src/backend/main.py` → `hitl_decide()` | Ghi quyết định TRƯỚC, đánh thức graph SAU; lỗi ở bước đánh thức không được nuốt mất quyết định đã ghi | Đừng gộp hai bước vào một transaction hay đảo thứ tự |
 
 ## 5. Nơi KHÔNG Được Sửa Tay
 

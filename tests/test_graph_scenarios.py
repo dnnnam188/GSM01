@@ -12,7 +12,7 @@ import asyncio
 import sys
 import uuid
 
-from src.backend.agent.graph import run_graph
+from src.backend.agent.graph import interrupt_payload, run_graph
 from src.backend.db.connection import get_connection
 from src.backend.db.repository import get_business_config, get_user_by_email
 
@@ -105,21 +105,34 @@ async def main() -> int:
     s = await run_graph(
         cid, conv, "Chuyến XSM-DOUBLE-02 của tôi bị trừ tiền hai lần, hoàn lại cho tôi", [])
     check(s["intent"] == "refund.request", "intent = refund.request", s["intent"])
-    check("request_refund" in tools_called(s), "gọi request_refund", str(tools_called(s)))
-    refund = next((c for c in s["tool_results"] if c["tool"] == "request_refund"), None)
-    if refund and refund["ok"]:
-        refund_codes.append(refund["data"]["refund_code"])
-        check(refund["data"]["status"] == "PENDING_HITL",
-              "trạng thái = PENDING_HITL (không tự duyệt)", refund["data"]["status"])
-        check(bool(s.get("pending_hitl")), "graph đánh dấu ca chờ người duyệt")
-        check(bool(refund["data"].get("escalation_reason")),
-              "có nêu lý do phải chuyển người", str(refund["data"].get("escalation_reason"))[:70])
-        check(refund["data"]["amount"] == 120_000,
+    # Ca này graph phải TREO lại. Khi `interrupt()` ném ra, LangGraph huỷ toàn bộ
+    # phần ghi state của node đang chạy, nên `tool_results` và `pending_hitl` **rỗng
+    # là đúng** — đừng kiểm ở đó. Tín hiệu thật của một ca đang treo là
+    # `__interrupt__`, và đó cũng đúng thứ `pipeline.run_turn` đọc qua
+    # `interrupt_payload()`. Kiểm sai chỗ thì test đỏ trong khi sản phẩm vẫn đúng.
+    payload = interrupt_payload(s)
+    check(payload is not None, "graph TREO lại chờ người duyệt (có __interrupt__)")
+    if payload:
+        refund_codes.append(payload["refund_code"])
+        check(payload["type"] == "refund_approval", "điểm dừng đúng loại", str(payload["type"]))
+        check(bool(payload.get("escalation_reason")),
+              "có nêu lý do phải chuyển người", str(payload.get("escalation_reason"))[:70])
+        check(payload["amount"] == 120_000,
               "số tiền do HỆ THỐNG suy ra từ bằng chứng, không do khách khai",
-              f"{refund['data']['amount']:,} VNĐ")
-    else:
-        check(False, "request_refund chạy được",
-              str(refund["error"]["code"]) if refund else "không gọi")
+              f"{payload['amount']:,} VNĐ")
+        check(payload["amount"] > payload["threshold_applied"],
+              "vượt ngưỡng tự duyệt nên mới phải chuyển người",
+              f"{payload['amount']:,} > {payload['threshold_applied']:,}")
+        # Yêu cầu phải nằm trong DB ở trạng thái chờ, nếu không CSKH mở dashboard
+        # ra sẽ không thấy gì để duyệt.
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM refund_requests WHERE refund_code = %s",
+                        (payload["refund_code"],))
+            row = cur.fetchone()
+        check(row is not None and row[0] == "PENDING_HITL",
+              "yêu cầu đã nằm trong DB chờ duyệt", str(row[0]) if row else "không có dòng nào")
+        check(tools_called(s) == [],
+              "state của node bị huỷ khi treo — đúng theo LangGraph", str(tools_called(s)))
 
     # --- 5. Hoàn tiền dưới ngưỡng -> tự duyệt ------------------------------
     print("\n5. refund.request dưới ngưỡng — AI tự duyệt")
@@ -169,6 +182,37 @@ async def main() -> int:
     check("KẾT QUẢ THAO TÁC" in s.get("answer_prompt", ""),
           "prompt có mục KẾT QUẢ THAO TÁC")
     check("XSM-FAREDIFF-01" in s.get("answer_prompt", ""), "prompt mang mã chuyến thật")
+
+    # --- 8. Hỏi lại rồi khách trả lời -> phải ĐI TIẾP, không hỏi lại vòng vo ----
+    print("\n8. Sau khi hỏi lại, khách cho mã chuyến thì phải xử lý luôn")
+    conv = _new_conversation(cid)
+    conversations.append(conv)
+    history: list[dict] = []
+    states = []
+    for turn in ("Tôi để quên ví trên xe", "XSM-ACTIVE-02"):
+        st = await run_graph(cid, conv, turn, history)
+        states.append(st)
+        reply = st.get("clarify_question") or "(câu trả lời)"
+        history += [{"role": "user", "content": turn},
+                    {"role": "assistant", "content": reply}]
+
+    first, second = states
+    check(bool(first.get("clarify_question")), "Lượt 1 thiếu mã chuyến thì hỏi lại")
+    check(second.get("slots", {}).get("ride_code") == "XSM-ACTIVE-02",
+          "Lượt 2 trích được mã chuyến từ câu trả lời trần",
+          str(second.get("slots", {}).get("ride_code")))
+    # Đây là chỗ từng hỏng: checkpointer giữ state qua các lượt, nên
+    # `clarify_question` của lượt 1 còn nguyên ở lượt 2 và agent hỏi lại mãi.
+    check(not second.get("clarify_question"),
+          "Lượt 2 KHÔNG hỏi lại nữa (state lượt trước phải bị xoá)")
+    check(bool(second.get("answer_prompt")), "Lượt 2 dựng được prompt trả lời")
+    check("create_ticket" in tools_called(second),
+          "Lượt 2 tạo ticket thật", str(tools_called(second)))
+    # Cùng nguyên nhân: `tool_results` từng dùng reducer cộng dồn nên kết quả
+    # lượt trước dính sang lượt sau, giao diện hiện nhầm các bước.
+    check(all(c["tool"] != "route_intent" for c in (second.get("tool_results") or [])),
+          "Kết quả tool của lượt trước không dính sang lượt sau",
+          str(tools_called(second)))
 
     _cleanup(conversations, refund_codes, ride_codes)
 

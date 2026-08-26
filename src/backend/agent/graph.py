@@ -20,7 +20,7 @@ bước đó, nên tách như vậy không cản trở gì.
 from __future__ import annotations
 
 import time
-from typing import Annotated, Any, TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
@@ -31,10 +31,6 @@ from src.backend.db import repository as repo
 from src.backend.llm.client import LLMClient
 from src.backend.rag.retriever import retrieve
 from src.backend.tools.executor import derive_refund_evidence, execute_tool
-
-
-def _merge_list(left: list, right: list) -> list:
-    return (left or []) + (right or [])
 
 
 class AgentState(TypedDict, total=False):
@@ -51,7 +47,11 @@ class AgentState(TypedDict, total=False):
     standalone_query: str
     # Kết quả các bước
     chunks: list[Any]
-    tool_results: Annotated[list[dict[str, Any]], _merge_list]
+    # KHÔNG dùng reducer cộng dồn ở đây. `tool_node` là nơi duy nhất ghi trường
+    # này, nên ghi đè là đủ — mà quan trọng hơn: có reducer thì truyền `[]` vào
+    # lượt sau sẽ KHÔNG xoá được, và kết quả tool của lượt trước dính sang lượt
+    # sau. Checkpointer giữ state qua các lượt trên cùng `thread_id`.
+    tool_results: list[dict[str, Any]]
     clarify_question: str
     answer_prompt: str
     degraded: bool
@@ -387,9 +387,19 @@ async def run_graph(customer_id: str, conversation_id: str, message: str,
     Nếu graph dừng ở `interrupt()`, kết quả trả về mang khoá `__interrupt__` và
     KHÔNG có `answer_prompt`. Nơi gọi phải kiểm tra bằng `interrupt_payload()`.
     """
+    # Checkpointer giữ state của lượt TRƯỚC trên cùng `thread_id`. Phải xoá sạch
+    # mọi trường thuộc về một lượt, nếu không:
+    #   - `clarify_question` cũ còn nguyên -> agent hỏi lại mãi dù khách đã trả lời
+    #   - `tool_results` cũ dính sang -> giao diện hiện nhầm các bước của lượt trước
+    # Chỉ `run_graph` mới xoá; `resume_graph` thì KHÔNG, vì nó phải dùng lại đúng
+    # state đang treo ở điểm dừng HITL.
     state: AgentState = {
         "customer_id": customer_id, "conversation_id": conversation_id,
-        "message": message, "history": history, "tool_results": [],
+        "message": message, "history": history,
+        "intent": "", "confidence": 0.0, "slots": {}, "missing_slots": [],
+        "standalone_query": "", "chunks": [], "tool_results": [],
+        "clarify_question": "", "answer_prompt": "", "degraded": False,
+        "pending_hitl": None, "hitl_resolved": None,
     }
     graph = await get_graph()
     return await graph.ainvoke(state, config=_thread_config(conversation_id))

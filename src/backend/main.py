@@ -181,25 +181,41 @@ async def hitl_decide(
                 "resumed": False, "delivered_to_customer": 0,
                 "note": "Không có phiên hội thoại để đánh thức"}
 
-    state = await resume_graph(thread_id, {
-        "approved": body.approved,
-        "reason": body.reason,
-        "agent_email": agent["email"],
-    })
+    amount = f"{decided['amount']:,}".replace(",", ".")
+    plain_answer = (
+        f"Dạ, yêu cầu hoàn tiền {amount} VNĐ (mã {refund_code}) của anh/chị đã được "
+        f"{'phê duyệt' if body.approved else 'xem xét và chưa được duyệt'} ạ."
+        + (f" Lý do: {body.reason}" if not body.approved and body.reason else "")
+    )
 
-    # Graph chạy tiếp tới answer_node và dựng xong prompt. Sinh câu trả lời rồi
-    # đẩy về đúng phiên của khách.
-    answer = ""
+    # Đánh thức graph. Có thể thất bại nếu thread không còn checkpoint — ví dụ ca
+    # được tạo ngoài graph, hoặc checkpoint đã bị dọn. Quyết định thì ĐÃ ghi vào
+    # DB rồi, nên tuyệt đối không được để lỗi ở bước này nuốt mất nó: vẫn phải
+    # báo cho khách, chỉ là bằng câu soạn sẵn thay vì câu do agent viết.
+    resumed = False
+    answer = plain_answer
     try:
-        response = get_llm_client().generate(
-            state.get("answer_prompt", ""), system=ANSWER_SYSTEM, max_tokens=500)
-        answer = mask_text(get_vault(thread_id).mask_for_display(response.text))
-    except LLMError:
-        amount = f"{decided['amount']:,}".replace(",", ".")
-        answer = (
-            f"Dạ, yêu cầu hoàn tiền {amount} VNĐ (mã {refund_code}) của anh/chị đã được "
-            f"{'phê duyệt' if body.approved else 'xem xét và chưa được duyệt'} ạ."
-        )
+        state = await resume_graph(thread_id, {
+            "approved": body.approved,
+            "reason": body.reason,
+            "agent_email": agent["email"],
+        })
+        prompt = state.get("answer_prompt")
+        if prompt:
+            response = get_llm_client().generate(
+                prompt, system=ANSWER_SYSTEM, max_tokens=500)
+            answer = mask_text(get_vault(thread_id).mask_for_display(response.text))
+        resumed = True
+    except LLMError as exc:
+        resumed = True  # graph đã chạy tiếp, chỉ bước sinh câu chữ là hỏng
+        await asyncio.to_thread(
+            repo.log_tool_call, thread_id, "generate_answer", {"refund_code": refund_code},
+            status="ERROR", error_type="RETRYABLE", error_message=str(exc)[:500])
+    except Exception as exc:  # noqa: BLE001 — không được để mất quyết định đã ghi
+        await asyncio.to_thread(
+            repo.log_tool_call, thread_id, "resume_graph", {"refund_code": refund_code},
+            status="ERROR", error_type="FATAL",
+            error_message=f"{type(exc).__name__}: {exc}"[:500])
 
     await asyncio.to_thread(
         repo.insert_message, thread_id, "assistant", answer, intent="refund.request")
@@ -209,7 +225,7 @@ async def hitl_decide(
         "type": "hitl_result", "refund_code": refund_code,
         "approved": body.approved, "message": answer,
     })
-    return {"refund_code": refund_code, "status": decided["status"], "resumed": True,
+    return {"refund_code": refund_code, "status": decided["status"], "resumed": resumed,
             "delivered_to_customer": delivered, "message": answer}
 
 

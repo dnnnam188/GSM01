@@ -13,6 +13,113 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – Sửa lỗi agent hỏi lại vòng vo, và một bài học về checkpointer
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: sửa lỗi phát sinh sau T-011
+
+### 📊 Kết quả
+`pytest` **69/69** · `test_graph_scenarios` **27/29** (2 phép kiểm còn lại không chạy được vì
+cạn hạn mức LLM, không phải lỗi code) · kịch bản 8 mới thêm **6/6 xanh** · ruff sạch.
+
+### 🐞 Lỗi: khách trả lời rồi mà agent vẫn hỏi lại đúng câu đó
+Người dùng gửi ảnh màn hình: "Tôi để quên ví trên xe" → agent hỏi "chuyến nào ạ?" → khách đáp
+"XSM-ACTIVE-02" → agent hỏi lại y hệt. Lỗi này **do chính T-011 sinh ra**: gắn checkpointer vào
+là state sống dai qua các lượt, mà graph lại được viết từ thời state chết sau mỗi lượt.
+
+Hai nguyên nhân cùng gốc:
+1. `tool_results` dùng reducer **cộng dồn**, nên truyền `[]` cho lượt mới không xoá được gì —
+   đó là lý do huy hiệu các bước của lượt 1 dính sang lượt 2 trên giao diện.
+2. `clarify_question` của lượt trước còn nguyên trong checkpoint, nên `pipeline.run_turn`
+   luôn rẽ vào nhánh hỏi lại dù lượt mới đã đủ thông tin.
+
+Sửa: bỏ reducer, và `run_graph()` khởi tạo lại toàn bộ trường theo lượt. Cố ý **không** làm vậy
+trong `resume_graph()` — luồng HITL phải dùng lại đúng state đang treo, xoá là mất ca chờ duyệt.
+
+### 🔍 Vì sao không test nào bắt được
+Toàn bộ kịch bản khi đó đều **một lượt**. Một lỗi thuần về *trạng thái giữa các lượt* thì kịch
+bản một lượt không thể chạm tới, dù có bao nhiêu cái đi nữa. Đã thêm kịch bản 8 hai lượt, kiểm
+đúng ba thứ: lượt 2 trích được mã chuyến, lượt 2 **không** còn `clarify_question`, và
+`tool_results` lượt 2 không dính kết quả lượt 1.
+
+### ⚠️ Việc đang chặn: cạn hạn mức LLM cả hai tầng
+Gemini trả 429 (hết hạn mức ngày), fallback TokenRouter trả 503 (model free chết). Thử key
+AgentRouter thì **mọi request đều bị `400 content-blocked`** với cả `gpt-5.6-sol`, `gpt-5.6`,
+`gpt-5-mini` — lỗi ở tài khoản/key, không phải ở prompt. Cần người dùng kiểm lại trên
+agentrouter.org trước khi trỏ `FALLBACK_*` sang đó.
+
+### ➡️ Việc tiếp theo
+T-014 (thống kê dashboard + cảnh báo hạn mức), T-015 (CSAT). Người dùng cần: gộp nhánh
+`feature/langgraph-agent-tools` vào `main` để Render chạy code mới, đặt `PYTHON_VERSION=3.13.7`.
+
+---
+
+## [2026-08-26] – D10: Đóng Gói, Kịch Bản Demo, Và Một Lỗi Chỉ Lộ Ra Khi Diễn Thử (T-013)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-013 ✅
+
+### 📊 Kết quả
+`pytest` **69/69** · `test_e2e_slice` **28/28** · `test_hitl_flow` **32/32** (thêm 6) · ruff sạch.
+
+### ✅ Đã làm được
+- **`README.md` viết mới hoàn toàn** — trước đó vẫn là template *"Tên Dự Án"*. Nay có bảng 6
+  chỉ số ngay đầu trang, sơ đồ kiến trúc mermaid, **bốn quyết định định hình hệ thống** kèm
+  liên kết ADR, hướng dẫn chạy, và mục *"điểm yếu tự biết"*.
+- **`docs/DEMO.md`** — kịch bản 5 phút chia theo mốc thời gian, có lời thoại gợi ý, bảng xử lý
+  sự cố, và 4 câu hỏi giám khảo hay hỏi kèm câu trả lời.
+- **`scripts/demo_reset.py`** — đưa dữ liệu về trạng thái trình bày được.
+
+### 🔍 Vì sao phải có script reset: kiểm thì thấy hàng đợi duyệt RỖNG
+Trước khi viết kịch bản, tôi kiểm trạng thái dữ liệu và phát hiện ca chờ duyệt `RF-SEED-0001`
+**đã bị các lần chạy test tiêu thụ hết**. Nếu cứ thế đi demo, phần quan trọng nhất — dashboard
+CSKH — sẽ mở ra trống trơn. Buổi demo phụ thuộc vào trạng thái dữ liệu, mà trạng thái đó bị
+chính bộ test làm biến dạng.
+
+### 🐞 Lỗi tệ nhất phát hiện hôm nay: duyệt xong nhưng khách không được báo
+Diễn thử bước bấm Duyệt trên ca demo → **HTTP 500**.
+
+Nguyên nhân: ca đó được tạo bằng SQL nên **không có checkpoint LangGraph**. `Command(resume=...)`
+khởi động graph với state rỗng, node đọc `state["message"]` → `KeyError`.
+
+Điều làm nó nghiêm trọng không phải là mã 500, mà là **thứ tự**: quyết định đã được ghi vào DB
+*trước* khi đánh thức graph — đúng như thiết kế ở T-011 — nên hệ thống ghi nhận "đã duyệt"
+trong khi khách **không hề nhận được thông báo nào**. Hỏng im lặng và lệch dữ liệu, kiểu tệ nhất.
+
+Đã vá: bọc bước đánh thức, thất bại thì vẫn gửi câu soạn sẵn cho khách, trả `resumed: false`
+trung thực, và ghi `resume_graph / FATAL` vào `tool_calls` để truy vết. Thêm mục 8 vào
+`test_hitl_flow` (6 phép kiểm) khoá chặt hành vi này.
+
+Đây là lỗ hổng thật chứ không chỉ chuyện của demo: bất kỳ ca nào mất checkpoint đều rơi vào đó.
+
+### 🐞 Và script dọn dẹp không tự dọn được chính nó
+`demo_reset` chạy lần hai thì vấp `UniqueViolation` trên `thread_id = 'demo-hitl-seed'` — nó
+xoá hội thoại rác của test nhưng quên tiền tố do chính nó sinh ra. Một script luôn được chạy
+lại ngay trước giờ trình bày mà không chạy lại được thì vô dụng. Đã sửa và kiểm bằng cách chạy
+hai lần liên tiếp.
+
+### 📁 File đã thay đổi
+- `README.md` — viết mới hoàn toàn
+- `docs/DEMO.md`, `scripts/demo_reset.py` — **mới**
+- `src/backend/main.py` — `hitl_decide()` xuống cấp êm khi không đánh thức được graph
+- `tests/test_hitl_flow.py` — thêm mục 8, tổng 32 phép kiểm
+- `.ai/context/codemap.md` — thêm script demo và hai vùng nhạy cảm mới
+
+### ⏳ Đang dở
+- Không. T-013 đã thoả DoD ở phần làm được.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Video demo chưa quay** — tôi không tạo được video. `docs/DEMO.md` có mục *"Ghi hình"* với
+   độ phân giải, thứ tự quay, và lưu ý không cắt đoạn chờ (nó cho thấy đây là hệ thống thật).
+2. **Chưa merge vào `main`** — bản Render vẫn chạy code trước T-004.
+3. Nhớ chạy `scripts/demo_reset` **và** ping Render trước mỗi lần trình bày.
+
+### ➡️ Việc tiếp theo
+- **T-014** dashboard thống kê + cảnh báo hạn mức (`P1`) · **T-015** CSAT (`P2`).
+- T-006 vẫn chờ kiểm chứng trực quan.
+
+---
+
 ## [2026-08-26] – D9: Đo Lại Toàn Bộ, Chaos Test, Và Lấp Lỗ Hổng Của Chính Bộ Đo (T-012)
 
 - **Agent / Người thực hiện**: Claude Code
