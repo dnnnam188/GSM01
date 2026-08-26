@@ -14,6 +14,22 @@
 
 ## Danh Sách Lỗi Đã Xử Lý
 
+### [2026-08-27] - Kịch bản HITL đỏ trong khi sản phẩm vẫn đúng: `interrupt()` huỷ phần ghi state của node
+- **Hiện tượng**: Mục 4 của `test_graph_scenarios` đỏ hai phép kiểm — "gọi request_refund" và
+  "request_refund chạy được" — dù luồng HITL trên app chạy hoàn toàn bình thường. Ban đầu tôi
+  **quy oan cho việc cạn hạn mức Gemini**; sau khi nạp key còn quota thì nó vẫn đỏ y nguyên.
+- **Nguyên nhân cốt lõi**: `tool_node` gọi `run("request_refund", ...)` rồi mới gọi `interrupt()`.
+  `interrupt()` **ném ra ngoài**, nên dòng `return {"tool_results": calls, ...}` không bao giờ
+  chạy. LangGraph huỷ toàn bộ phần ghi state của task đang treo, vì vậy `tool_results` và
+  `pending_hitl` rỗng **là đúng đặc tả**. Bài test lại đi đọc đúng hai trường đó.
+- **Giải pháp xử lý**: Mục 4 nay kiểm `__interrupt__` qua `interrupt_payload()` — đúng thứ
+  `pipeline.run_turn` đọc — cộng thêm kiểm dòng `refund_requests` trong DB đã ở `PENDING_HITL`.
+  Không sửa gì trong `src/`, vì sản phẩm không sai. 34/34.
+- **Lưu ý phòng ngừa**: Với node có `interrupt()`, **đừng bao giờ** kiểm state trả về của node đó
+  — nó không tồn tại. Kiểm ở hai chỗ còn thật: nội dung điểm dừng, và dấu vết đã ghi xuống DB.
+  Bài học lặp lại lần thứ năm: test đỏ chưa chắc sản phẩm sai, và đoán nguyên nhân (hạn mức) thay
+  vì đo (in ra khoá của state) làm mất nguyên một lượt.
+
 ### [2026-08-26] - Agent hỏi lại một câu y hệt mãi không thoát, sau khi gắn checkpointer
 - **Hiện tượng**: Khách nói "Tôi để quên ví trên xe" → agent hỏi "chuyến nào ạ?" → khách trả lời
   "XSM-ACTIVE-02" → agent **hỏi lại đúng câu đó**, lặp vô hạn. Trên màn hình còn thấy huy hiệu
