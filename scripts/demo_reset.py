@@ -24,7 +24,7 @@ from src.backend.db.connection import get_connection
 TEST_THREAD_PREFIXES = (
     "pytest-%", "chaos-%", "mt-%", "e2e-%", "graph-%", "hitl-%",
     "pii-%", "pii-test-%", "probe-%", "envcheck-%", "pii-ux%",
-    "demo-hitl-seed%",
+    "csat-%", "demo-hitl-seed%", "demo-csat-%",
 )
 
 REQUIRED_CASES = [
@@ -88,7 +88,20 @@ def main() -> None:
              0.12, str(conversation_id), "demo:refund:seed"))
         report.append("Đã dựng 1 ca chờ duyệt: RF-DEMO-0001 · 120.000 VNĐ · thu tiền trùng")
 
-        # 4. Kiểm 11 case khó còn đủ không
+        # 4. Dựng vài điểm hài lòng để ô CSAT trên dashboard có số thật
+        # Không có dòng nào thì dashboard hiện "—" ngay giữa lúc trình bày, trông
+        # như tính năng chưa làm xong chứ không phải như chưa có ai đánh giá.
+        for i, score in enumerate((5, 4, 5, 3), start=1):
+            cur.execute(
+                "INSERT INTO conversations (customer_id, thread_id, status) "
+                "VALUES (%s, %s, 'CLOSED') RETURNING id", (customer_id, f"demo-csat-{i}"))
+            conv_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO csat_ratings (conversation_id, customer_id, score) "
+                "VALUES (%s, %s, %s)", (conv_id, customer_id, score))
+        report.append("Đã dựng 4 lượt đánh giá (5·4·5·3 → trung bình 4,25)")
+
+        # 5. Kiểm 11 case khó còn đủ không
         cur.execute("SELECT ride_code FROM rides WHERE ride_code = ANY(%s)", (REQUIRED_CASES,))
         found = {r[0] for r in cur.fetchall()}
         missing = [code for code in REQUIRED_CASES if code not in found]
@@ -96,7 +109,7 @@ def main() -> None:
             f"Case khó: {len(found)}/{len(REQUIRED_CASES)}"
             + (f" — THIẾU {missing}, chạy lại src.backend.db.seed" if missing else " ✓"))
 
-        # 5. Trả các chuyến đang chạy về đúng trạng thái để demo huỷ chuyến
+        # 6. Trả các chuyến đang chạy về đúng trạng thái để demo huỷ chuyến
         cur.execute(
             "UPDATE rides SET status = 'ASSIGNED', cancelled_at = NULL, cancel_fee = 0, "
             "cancel_reason = NULL, cancelled_by = NULL, requested_at = now() "

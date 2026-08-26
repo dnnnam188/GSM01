@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Shell } from "@/components/Shell";
-import { WS_BASE, type Session } from "@/lib/api";
+import { WS_BASE, submitCsat, type Session } from "@/lib/api";
 import { INTENT_LABEL, ms } from "@/lib/format";
 
 type ToolEvent = { name: string; ok: boolean; replayed: boolean; error: string | null };
@@ -38,6 +38,9 @@ export function CustomerChat({
   const [status, setStatus] = useState("Đang kết nối");
   const [connected, setConnected] = useState(false);
   const [waiting, setWaiting] = useState(false);
+  const [threadId, setThreadId] = useState("");
+  const [rated, setRated] = useState(false);
+  const [csatHidden, setCsatHidden] = useState(false);
   const socket = useRef<WebSocket | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
 
@@ -59,6 +62,7 @@ export function CustomerChat({
       if (data.type === "ready") {
         setConnected(true);
         setStatus("Sẵn sàng");
+        setThreadId(data.thread_id ?? "");
         return;
       }
 
@@ -143,6 +147,12 @@ export function CustomerChat({
   );
 
   const awaitingHuman = turns.some((turn) => turn.awaitingHuman);
+  // Hỏi điểm khi phiên đã thực sự diễn ra (từ 2 lượt trả lời trở lên) và lượt
+  // cuối đã xong. Hỏi ngay sau câu đầu tiên là hỏi giữa chừng, không phải cuối
+  // phiên — và đang chờ CSKH duyệt thì phiên chưa kết thúc để mà chấm.
+  const answered = turns.filter((turn) => turn.who === "bot").length;
+  const askCsat =
+    answered >= 2 && !waiting && !awaitingHuman && !csatHidden && Boolean(threadId);
 
   return (
     <Shell session={session} onLogout={onLogout}>
@@ -185,6 +195,24 @@ export function CustomerChat({
           ))}
 
           {waiting && <PendingBubble />}
+
+          {askCsat && (
+            <CsatPrompt
+              rated={rated}
+              onRate={async (score) => {
+                try {
+                  await submitCsat(session.accessToken, threadId, score, null);
+                  setRated(true);
+                  // Để lời cảm ơn nán lại một nhịp rồi mới thu gọn, chứ biến mất
+                  // ngay thì khách không kịp thấy điểm đã được ghi nhận.
+                  setTimeout(() => setCsatHidden(true), 2500);
+                } catch {
+                  setStatus("Chưa gửi được đánh giá, bạn thử lại giúp em ạ");
+                }
+              }}
+              onDismiss={() => setCsatHidden(true)}
+            />
+          )}
         </div>
 
         <form
@@ -212,6 +240,52 @@ export function CustomerChat({
         </p>
       </div>
     </Shell>
+  );
+}
+
+/** Hỏi mức hài lòng 1–5 cuối phiên (F16). */
+function CsatPrompt({
+  rated,
+  onRate,
+  onDismiss,
+}: {
+  rated: boolean;
+  onRate: (score: number) => void;
+  onDismiss: () => void;
+}) {
+  if (rated) {
+    return (
+      <p className="status-line" style={{ justifyContent: "center" }}>
+        Cảm ơn anh/chị đã đánh giá.
+      </p>
+    );
+  }
+  return (
+    <div className="panel" style={{ padding: 16, textAlign: "center" }}>
+      <p className="empty__hint" style={{ marginBottom: 12 }}>
+        Em hỗ trợ anh/chị vừa rồi có ổn không ạ? (1 = rất tệ, 5 = rất tốt)
+      </p>
+      <div className="row" style={{ justifyContent: "center", gap: 8 }}>
+        {[1, 2, 3, 4, 5].map((score) => (
+          <button
+            key={score}
+            className="btn-quiet tnum"
+            style={{ minWidth: 44 }}
+            onClick={() => onRate(score)}
+            aria-label={`Chấm ${score} trên 5`}
+          >
+            {score}
+          </button>
+        ))}
+      </div>
+      <button
+        className="btn-quiet"
+        style={{ marginTop: 10, fontSize: 13 }}
+        onClick={onDismiss}
+      >
+        Bỏ qua
+      </button>
+    </div>
   );
 }
 
