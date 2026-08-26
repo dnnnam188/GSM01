@@ -13,6 +13,73 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D8: HITL Bằng `interrupt()` — Graph Dừng Thật Rồi Chạy Tiếp (T-011, T-005)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-011 ✅, T-005 ✅
+
+### 📊 Kết quả
+`tests.test_hitl_flow` **26/26** · `pytest` **63/63** · `tests.test_e2e_slice` **28/28** · ruff sạch.
+
+### ✅ Trọn luồng đã kiểm chứng
+1. Khách: *"Chuyến XSM-DOUBLE-02 bị trừ tiền hai lần, hoàn lại tiền cho tôi"*
+2. Hệ thống đối soát → 120.000đ > ngưỡng 50.000đ → **graph dừng bằng `interrupt()`**,
+   state ghi vào bảng `checkpoints` của Postgres, hội thoại chuyển `WAITING_HUMAN`
+3. Khách nhận: *"vượt hạn mức em được phép tự xử lý, nên em đã chuyển tới bộ phận phụ trách"*
+   — cố ý **không hứa** là sẽ được duyệt
+4. CSKH thấy ca trong `/api/hitl/queue` kèm căn cứ đối soát
+5. CSKH bấm Duyệt → graph **chạy tiếp từ đúng chỗ dừng**
+6. Khách nhận kết quả **ngay trên phiên WebSocket đang mở**, server xác nhận đã đẩy
+
+Kèm các chốt chặn: từ chối không lý do → **400**, duyệt lần hai → **409**,
+`audit_log` ghi `HUMAN_AGENT` chứ không phải AI, khách gọi hàng đợi HITL → **403**.
+
+### 🔑 Ba điều học được, đều không đọc tài liệu mà ra
+**1. `interrupt()` chạy LẠI cả node từ đầu khi resume**, không tiếp tục từ giữa hàm.
+Nghĩa là mọi lời gọi tool phía trên chạy lại. Đây đúng là chỗ **ADR-005 trả công**:
+`request_refund` trùng `idempotency_key` nên trả kết quả cũ với `replayed=True`.
+Đã kiểm bằng `count(*) = 1` trên `refund_requests`. Không có idempotency thì **mỗi lần
+duyệt là một yêu cầu hoàn tiền mới** — mất tiền thật.
+
+**2. Thứ tự ghi-rồi-đánh-thức là bắt buộc.** Ghi quyết định xuống DB trước, resume graph sau.
+Đảo lại mà bước ghi hỏng thì khách đã nhận thông báo "được duyệt" trong khi hệ thống không
+có bản ghi nào — sai lệch đó không sửa được.
+
+**3. Trên Windows, `psycopg` async không chạy được trên `ProactorEventLoop`** mà uvicorn
+chọn mặc định. Mọi kết nối checkpointer hỏng với *"Psycopg cannot use the 'ProactorEventLoop'"*.
+Đặt policy trong `main.py` **không ăn** vì uvicorn tự dựng loop riêng. Phải có `run_dev.py`
+với `loop="none"` để tự dựng Selector loop. Linux không dính nên production không đổi gì.
+Cũng đã xác nhận `PostgresSaver` bản đồng bộ **không** hiện thực các phương thức async,
+nên không thể né bằng cách dùng bản sync.
+
+### 📁 File đã thay đổi
+- `src/backend/agent/checkpointer.py`, `src/backend/api/hub.py`, `run_dev.py` — **mới**
+- `src/backend/agent/graph.py` — `interrupt()`, `resume_graph()`, compile với checkpointer
+- `src/backend/agent/pipeline.py` — xử lý điểm dừng, báo khách bằng lời không hứa hẹn
+- `src/backend/main.py` — `/api/hitl/queue`, `/api/hitl/{code}/decide`, đăng ký hub
+- `src/backend/db/repository.py` — `hitl_queue()`, `decide_refund()`
+- `src/backend/tools/executor.py` — gắn refund vào `conversation_id`
+- `tests/test_hitl_flow.py` — **mới**, 26 phép kiểm
+- `.ai/context/decisions.md` (ADR-003), `codemap.md`, `docs/DEPLOY.md`
+
+### ⏳ Đang dở
+- Không. T-011 và T-005 đã thoả DoD.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+1. **Chưa merge vào `main`** — bản trên Render vẫn chạy code **trước T-004**, tức chưa có
+   LangGraph, chưa có token hoá PII, chưa có HITL. Cần merge để production có những thứ này.
+2. **Sổ kết nối WebSocket nằm trong bộ nhớ một tiến trình.** Nếu Render chạy nhiều worker thì
+   khách sẽ không nhận được kết quả duyệt. Giữ một worker, hoặc đổi `api/hub.py` sang pub/sub.
+   Câu trả lời vẫn được ghi vào `messages` nên khách offline không mất tin.
+3. Kho ánh xạ PII cũng nằm trong bộ nhớ (ghi từ D7) — cùng ràng buộc một-worker.
+
+### ➡️ Việc tiếp theo
+- **T-006** — giao diện đầy đủ: dashboard CSKH có hàng đợi duyệt, tool trace, nút Duyệt/Từ chối;
+  khung chat khách hiển thị trạng thái chờ duyệt và nhận sự kiện `hitl_result`.
+- **T-012** — đo lại toàn bộ, chaos test, bổ sung eval đa lượt + faithfulness.
+
+---
+
 ## [2026-08-26] – D7: Token Hoá PII — Đưa Rò Rỉ Từ 5/20 Về 0/20 (T-010)
 
 - **Agent / Người thực hiện**: Claude Code

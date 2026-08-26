@@ -60,6 +60,18 @@ GSM_BASE=https://<app>.onrender.com GSM_WS=wss://<app>.onrender.com \
 
 Phải đạt đủ 28/28 phép kiểm.
 
+## 3b. Chạy ở máy phát triển
+
+**Trên Windows bắt buộc dùng `run_dev.py`**, không gọi thẳng `uvicorn`:
+
+```bash
+.venv/Scripts/python.exe run_dev.py
+```
+
+Uvicorn chọn `ProactorEventLoop` trên Windows, mà `psycopg` bản async không chạy được trên đó —
+checkpointer Postgres của LangGraph sẽ hỏng mọi kết nối. Trên Linux (Render) vòng lặp mặc định
+vốn đã đúng, nên production cứ dùng `startCommand` trong `render.yaml` như bình thường.
+
 ## 4. Bẫy đã biết
 
 | Vấn đề | Xử lý |
@@ -68,4 +80,6 @@ Phải đạt đủ 28/28 phép kiểm.
 | Gemini hết hạn mức gói free | Hệ thống tự rơi sang OpenRouter (ADR-001). Đảm bảo `OPENROUTER_API_KEY` có trên Render, nếu không agent sẽ chỉ xin lỗi. |
 | WebSocket không kết nối được | Kiểm tra dùng `wss://` (không phải `ws://`) và `CORS_ORIGINS` khớp đúng domain Vercel. |
 | Neon ngắt kết nối nhàn rỗi | Kết nối được mở theo từng request rồi đóng, nên không giữ kết nối chết. |
-| `TTFT > 3s` sau khi deploy | Đo lại khi hạn mức Gemini còn: fallback OpenRouter chậm hơn Gemini đáng kể. |
+| `TTFT > 3s` sau khi deploy | Kiểm `LLM_ANSWER_MODEL` phải là `gemini-3.5-flash-lite` (ADR-010). Đọc `model_name` trong bảng `messages` để biết bản deploy đang dùng model nào. |
+| Khách không nhận được kết quả duyệt HITL | Sổ kết nối WebSocket nằm trong bộ nhớ một tiến trình. Chạy nhiều worker là hỏng — giữ **một** worker, hoặc đổi `api/hub.py` sang pub/sub. |
+| Bảng `checkpoints` không tồn tại | `get_checkpointer()` tự gọi `setup()` lần đầu. Nếu user DB không có quyền tạo bảng thì phải cấp quyền. |

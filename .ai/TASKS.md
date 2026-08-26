@@ -46,15 +46,13 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-- **T-011** — HITL duyệt hoàn tiền · `P0` · _Chưa ai cầm_
-  - **Bối cảnh**: Chỗ móc đã sẵn từ T-004: `tool_node` trả `pending_hitl`,
-    `refund_requests.resume_thread_id` đã lưu đúng thread, `conversations.status`
-    chuyển sang `WAITING_HUMAN`. Hiện agent mới chỉ **tạo yêu cầu rồi trả lời khách**,
-    chưa thật sự dừng graph lại.
-  - **Nghiệm thu**: hoàn > ngưỡng → graph dừng bằng `interrupt()`; CSKH bấm Duyệt trên
-    dashboard → graph **chạy tiếp từ đúng chỗ dừng** → khách nhận thông báo trên chính
-    phiên cũ. Từ chối thì bắt buộc nhập lý do (DB đã có ràng buộc).
-  - **Đọc trước**: ADR-003, `docs/PRD.md` F11–F12.
+- *(Trống)*
+- **Việc kế tiếp**: **T-006 — Frontend Next.js** (D9–D11). Backend đã đủ endpoint:
+  `/api/hitl/queue`, `/api/hitl/{code}/decide`, `/api/conversations/{id}/transcript`,
+  `/api/dashboard/summary`, và WebSocket đẩy sự kiện `hitl_result` về phiên khách.
+  Giao diện hiện mới là bản rút gọn từ T-009.
+- **Việc người dùng cần làm**: merge `feature/langgraph-agent-tools` vào `main` để bản
+  Render có LangGraph, PII và HITL. Hiện production vẫn chạy code trước T-004.
 
 ---
 
@@ -62,8 +60,6 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| T-011 | **HITL duyệt hoàn tiền** | D7–D8 | P0 | Hoàn > ngưỡng → `interrupt()`; CSKH duyệt → graph resume → khách nhận thông báo trên đúng phiên cũ | ADR-003. **Không được cắt** |
-| T-005 | Backend API cho dashboard | D9 | P0 | Endpoint hàng đợi HITL, transcript + tool trace, duyệt/từ chối (từ chối bắt buộc có lý do), thống kê | Phân quyền: `customer` gọi → 403 |
 | T-006 | Frontend Next.js | D9–D11 | P0 | Chat khách (stream, trạng thái chờ duyệt) + Dashboard CSKH (hàng đợi, tool trace, nút duyệt) | Kiểm ở 375px / 768px / 1280px |
 | T-012 | Đo lại, tối ưu, chaos test | D12 | P0 | Chạy T-008 lần cuối đạt cả 3 ngưỡng; test tắt LLM/DB/tool xem fallback | Nếu intent < 90% → chữa theo `intent-taxonomy.md` mục 4. **Bổ sung eval đa lượt + faithfulness** — xem bug-history 2026-08-26 |
 | T-013 | Đóng gói & demo | D13 | P1 | README có sơ đồ kiến trúc, video demo, kịch bản 5 phút chạy trọn luồng HITL | Ngày này cũng là đệm dự phòng |
@@ -80,6 +76,8 @@
 | T-007 | D1: Đóng băng đặc tả, intent taxonomy & 7 ADR | 2026-08-25 | JOURNAL `[2026-08-25]` — PRD, intent-taxonomy, ADR-001…007, architecture, glossary, codemap, DoD |
 | T-002 | Schema PostgreSQL + seed data | 2026-08-26 | JOURNAL `[2026-08-26]` — **14 bảng** (nhiều hơn 12 dự kiến) đã áp lên Neon; 311 chuyến + 11 case khó; 4 truy vấn kiểm chứng đã chạy thật |
 | T-003 | Tool contracts (Pydantic) | 2026-08-26 | JOURNAL `[2026-08-26]` — 8 tool, 5 ghi / 3 đọc, error taxonomy 3 nhánh, 11 test pass, ruff sạch |
+| T-011 | HITL duyệt hoàn tiền bằng `interrupt()` + checkpointer Postgres | 2026-08-26 | JOURNAL `[2026-08-26] D8` — **26/26** kịch bản; graph dừng thật, resume đúng chỗ, khách nhận tin trên phiên đang mở |
+| T-005 | Backend API cho dashboard CSKH | 2026-08-26 | JOURNAL `[2026-08-26] D8` — hàng đợi HITL, duyệt/từ chối có ràng buộc lý do, transcript + tool trace, thống kê |
 | T-010 | Guardrail PII: token hoá trước khi vào context | 2026-08-26 | JOURNAL `[2026-08-26] D7` — **0/20 ca lộ** (từ 5/20 raw và 2/20 masked); 13 test; `StreamMasker` che ngay trên luồng |
 | T-009 | Vertical slice + deploy (JWT 2 vai trò, WebSocket, RAG, ghi vết) | 2026-08-26 | JOURNAL `[2026-08-26] D6e` — **28/28 trên bản deploy thật**, TTFT 945/1135 ms, `gemini-3.5-flash-lite` |
 | T-004 | LangGraph + 8 tool nghiệp vụ thật | 2026-08-26 | JOURNAL `[2026-08-26] D6` — graph 5 node, 8 tool, 26/26 kịch bản nghiệp vụ, 50 test pass |

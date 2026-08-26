@@ -294,6 +294,22 @@
   - Tự viết hàng đợi phê duyệt riêng — loại vì tốn 2 ngày làm lại thứ framework đã có sẵn.
 - **Hệ quả**: Cần bảng checkpoint của LangGraph trên Postgres, và một kênh đẩy (WebSocket) từ hành động
   của CSKH về đúng phiên của khách.
+- **Kết quả đã kiểm chứng (T-011, 2026-08-26)** — `tests.test_hitl_flow` đạt **26/26**:
+  graph dừng thật, state nằm trong bảng `checkpoints` của Postgres, CSKH duyệt xong thì graph
+  chạy tiếp và khách nhận thông báo **ngay trên phiên đang mở** (server xác nhận đã đẩy).
+
+  Ba điều học được khi hiện thực hoá:
+  1. **`interrupt()` chạy LẠI cả node từ đầu khi resume**, chứ không tiếp tục từ giữa hàm.
+     Nghĩa là mọi lời gọi tool phía trên chạy lại. Đây đúng là chỗ ADR-005 trả công:
+     `request_refund` trùng `idempotency_key` nên trả kết quả cũ với `replayed=True` — kiểm
+     chứng bằng truy vấn `count(*) = 1`. Không có idempotency thì mỗi lần duyệt là một
+     yêu cầu hoàn tiền mới.
+  2. **Thứ tự ghi–rồi–đánh thức là bắt buộc.** Ghi quyết định xuống DB trước, resume graph sau.
+     Đảo lại mà bước ghi hỏng thì khách đã nhận thông báo "được duyệt" trong khi hệ thống
+     không có bản ghi nào.
+  3. Trên Windows, `psycopg` bản async **không chạy được** trên `ProactorEventLoop` mà uvicorn
+     chọn mặc định. Phải dùng `run_dev.py` (đặt `WindowsSelectorEventLoopPolicy` + `loop="none"`).
+     Linux không dính, nên production không phải đổi gì.
 
 ---
 

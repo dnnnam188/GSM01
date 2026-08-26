@@ -158,3 +158,52 @@ def set_conversation_status(conversation_id: str, status: str) -> None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE conversations SET status = %s, last_activity_at = now() "
                     "WHERE id = %s", (status, conversation_id))
+
+
+def hitl_queue(limit: int = 50) -> list[dict[str, Any]]:
+    """Hàng đợi yêu cầu hoàn tiền đang chờ CSKH duyệt (F12)."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT rr.refund_code, rr.amount, rr.reason_code, rr.reason_detail, "
+            "       rr.fraud_score, rr.created_at, rr.resume_thread_id, rr.conversation_id, "
+            "       u.full_name, u.email, r.ride_code "
+            "FROM refund_requests rr "
+            "JOIN users u ON u.id = rr.customer_id "
+            "LEFT JOIN rides r ON r.id = rr.ride_id "
+            "WHERE rr.status = 'PENDING_HITL' ORDER BY rr.created_at LIMIT %s", (limit,))
+        return [
+            {"refund_code": r[0], "amount": r[1], "reason_code": r[2], "reason_detail": r[3],
+             "fraud_score": float(r[4]), "created_at": r[5].isoformat(),
+             "resume_thread_id": r[6],
+             "conversation_id": str(r[7]) if r[7] else None,
+             "customer_name": r[8], "customer_email": r[9], "ride_code": r[10]}
+            for r in cur.fetchall()
+        ]
+
+
+def decide_refund(refund_code: str, *, approved: bool, agent_id: str,
+                  reason: str | None) -> dict[str, Any] | None:
+    """Ghi quyết định của CSKH. Trả về None nếu ca không còn ở trạng thái chờ.
+
+    Ràng buộc `refund_reject_needs_reason` ở tầng DB bảo đảm từ chối phải có lý do —
+    giao diện không thể "quên" áp dụng (xem docs/DATA-MODEL.md mục 3).
+    """
+    status = "APPROVED" if approved else "REJECTED"
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE refund_requests SET status = %s, decided_by = %s, decision_reason = %s, "
+            "decided_at = now() WHERE refund_code = %s AND status = 'PENDING_HITL' "
+            "RETURNING amount, resume_thread_id, conversation_id, customer_id",
+            (status, agent_id, reason, refund_code))
+        row = cur.fetchone()
+        if not row:
+            return None
+        cur.execute(
+            "INSERT INTO audit_log (actor_type, actor_id, action, entity_type, entity_id, "
+            "after_data, reason) VALUES ('HUMAN_AGENT', %s, %s, 'refund_requests', %s, "
+            "%s::jsonb, %s)",
+            (agent_id, f"REFUND_{status}", refund_code,
+             json.dumps({"status": status, "amount": row[0]}), reason))
+    return {"amount": row[0], "resume_thread_id": row[1],
+            "conversation_id": str(row[2]) if row[2] else None,
+            "customer_id": str(row[3]), "status": status}

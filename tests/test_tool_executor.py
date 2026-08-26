@@ -119,8 +119,9 @@ def test_goi_lai_cung_yeu_cau_khong_hoan_tien_hai_lan(customer_id, conversation)
     assert first.data.refund_code == second.data.refund_code
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT count(*) FROM refund_requests WHERE conversation_id IS NOT DISTINCT "
-                    "FROM NULL AND resume_thread_id = %s", (conversation,))
+        # T-011 gan refund vao conversation de dashboard join duoc; truoc do cot nay de NULL
+        cur.execute("SELECT count(*) FROM refund_requests WHERE resume_thread_id = %s",
+                    (conversation,))
         count = cur.fetchone()[0]
     assert count == 1, f"Phải chỉ có đúng 1 yêu cầu hoàn tiền, đang có {count}"
     _cleanup_refunds([first.data.refund_code])

@@ -311,7 +311,8 @@ def _request_refund(inp: RequestRefundInput, idem: str) -> RequestRefundOutput:
             "INSERT INTO refund_requests (refund_code, customer_id, ride_id, conversation_id, "
             "amount, reason_code, reason_detail, fraud_score, status, resume_thread_id, "
             "idempotency_key, decided_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            (refund_code, inp.customer_id, ride[0], None, inp.amount, inp.reason_code.value,
+            (refund_code, inp.customer_id, ride[0], inp.conversation_id, inp.amount,
+             inp.reason_code.value,
              inp.reason_detail, fraud_score, status, inp.conversation_id, idem,
              None if needs_human else now))
         cur.execute(
