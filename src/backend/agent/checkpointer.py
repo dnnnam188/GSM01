@@ -13,11 +13,19 @@ trình sống lâu.
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 
 from src.backend.db.connection import get_database_url
+
+# Đặt ngay tại module này thay vì ở từng điểm vào: BẤT KỲ ai dùng checkpointer đều
+# cần Selector loop trên Windows — `run_dev.py`, `pytest`, script rời, bộ eval.
+# Lặp lại ở mỗi entrypoint là chắc chắn sẽ quên một chỗ, và triệu chứng khi quên là
+# treo 30 giây rồi `PoolTimeout`, không hề nhắc gì tới event loop.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 _pool: AsyncConnectionPool | None = None
 _saver: AsyncPostgresSaver | None = None

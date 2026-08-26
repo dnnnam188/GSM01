@@ -170,6 +170,37 @@ async def main() -> int:
           "prompt có mục KẾT QUẢ THAO TÁC")
     check("XSM-FAREDIFF-01" in s.get("answer_prompt", ""), "prompt mang mã chuyến thật")
 
+    # --- 8. Hỏi lại rồi khách trả lời -> phải ĐI TIẾP, không hỏi lại vòng vo ----
+    print("\n8. Sau khi hỏi lại, khách cho mã chuyến thì phải xử lý luôn")
+    conv = _new_conversation(cid)
+    conversations.append(conv)
+    history: list[dict] = []
+    states = []
+    for turn in ("Tôi để quên ví trên xe", "XSM-ACTIVE-02"):
+        st = await run_graph(cid, conv, turn, history)
+        states.append(st)
+        reply = st.get("clarify_question") or "(câu trả lời)"
+        history += [{"role": "user", "content": turn},
+                    {"role": "assistant", "content": reply}]
+
+    first, second = states
+    check(bool(first.get("clarify_question")), "Lượt 1 thiếu mã chuyến thì hỏi lại")
+    check(second.get("slots", {}).get("ride_code") == "XSM-ACTIVE-02",
+          "Lượt 2 trích được mã chuyến từ câu trả lời trần",
+          str(second.get("slots", {}).get("ride_code")))
+    # Đây là chỗ từng hỏng: checkpointer giữ state qua các lượt, nên
+    # `clarify_question` của lượt 1 còn nguyên ở lượt 2 và agent hỏi lại mãi.
+    check(not second.get("clarify_question"),
+          "Lượt 2 KHÔNG hỏi lại nữa (state lượt trước phải bị xoá)")
+    check(bool(second.get("answer_prompt")), "Lượt 2 dựng được prompt trả lời")
+    check("create_ticket" in tools_called(second),
+          "Lượt 2 tạo ticket thật", str(tools_called(second)))
+    # Cùng nguyên nhân: `tool_results` từng dùng reducer cộng dồn nên kết quả
+    # lượt trước dính sang lượt sau, giao diện hiện nhầm các bước.
+    check(all(c["tool"] != "route_intent" for c in (second.get("tool_results") or [])),
+          "Kết quả tool của lượt trước không dính sang lượt sau",
+          str(tools_called(second)))
+
     _cleanup(conversations, refund_codes, ride_codes)
 
     passed = sum(1 for ok, _ in results if ok)

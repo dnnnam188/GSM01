@@ -14,6 +14,25 @@
 
 ## Danh Sách Lỗi Đã Xử Lý
 
+### [2026-08-26] - Agent hỏi lại một câu y hệt mãi không thoát, sau khi gắn checkpointer
+- **Hiện tượng**: Khách nói "Tôi để quên ví trên xe" → agent hỏi "chuyến nào ạ?" → khách trả lời
+  "XSM-ACTIVE-02" → agent **hỏi lại đúng câu đó**, lặp vô hạn. Trên màn hình còn thấy huy hiệu
+  các bước của lượt 1 dính sang lượt 2. Không test nào đỏ, vì mọi kịch bản khi đó đều chỉ có
+  **một lượt**.
+- **Nguyên nhân cốt lõi**: Hai lỗi cùng gốc, đều do checkpointer của T-011 giữ state qua các lượt.
+  1. `tool_results` khai báo `Annotated[list, _merge_list]` — reducer **cộng dồn**. Truyền `[]`
+     cho lượt mới không xoá được gì cả, nó chỉ nối thêm vào danh sách cũ.
+  2. Các trường tính theo lượt (`clarify_question`, `answer_prompt`, `slots`, `chunks`…) nằm
+     nguyên trong checkpoint. `pipeline.run_turn` thấy `clarify_question` cũ còn đó nên luôn
+     rẽ vào nhánh hỏi lại, bất kể lượt mới đã đủ thông tin.
+- **Giải pháp xử lý**: Bỏ reducer, để `tool_results` ghi đè bình thường; `run_graph()` khởi tạo
+  lại **toàn bộ** trường theo lượt. Cố ý **không** làm vậy trong `resume_graph()` — luồng HITL
+  phải dùng lại đúng state đang treo. Tệp: `src/backend/agent/graph.py`.
+- **Lưu ý phòng ngừa**: Checkpointer biến state thành **dữ liệu sống dai**. Với mỗi trường trong
+  state phải trả lời: nó thuộc về *hội thoại* hay thuộc về *một lượt*? Trường theo lượt bắt buộc
+  phải bị xoá khi vào lượt mới. Và kịch bản kiểm thử một lượt **không bao giờ** bắt được lớp lỗi
+  này — đã thêm kịch bản 8 (hai lượt) trong `tests/test_graph_scenarios.py`.
+
 ### [2026-08-26] - `thinkingBudget` sai tham số làm chết toàn bộ lời gọi LLM, không test nào bắt được
 - **Hiện tượng**: Mọi lời gọi Gemini trả `400 INVALID_ARGUMENT`. Agent chỉ còn trả câu xin lỗi.
   Lời gọi trần (không schema, không system) thì chạy, nên ban đầu nghi oan cho `responseSchema`.

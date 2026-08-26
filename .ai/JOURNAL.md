@@ -13,6 +13,47 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – Sửa lỗi agent hỏi lại vòng vo, và một bài học về checkpointer
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: sửa lỗi phát sinh sau T-011
+
+### 📊 Kết quả
+`pytest` **69/69** · `test_graph_scenarios` **27/29** (2 phép kiểm còn lại không chạy được vì
+cạn hạn mức LLM, không phải lỗi code) · kịch bản 8 mới thêm **6/6 xanh** · ruff sạch.
+
+### 🐞 Lỗi: khách trả lời rồi mà agent vẫn hỏi lại đúng câu đó
+Người dùng gửi ảnh màn hình: "Tôi để quên ví trên xe" → agent hỏi "chuyến nào ạ?" → khách đáp
+"XSM-ACTIVE-02" → agent hỏi lại y hệt. Lỗi này **do chính T-011 sinh ra**: gắn checkpointer vào
+là state sống dai qua các lượt, mà graph lại được viết từ thời state chết sau mỗi lượt.
+
+Hai nguyên nhân cùng gốc:
+1. `tool_results` dùng reducer **cộng dồn**, nên truyền `[]` cho lượt mới không xoá được gì —
+   đó là lý do huy hiệu các bước của lượt 1 dính sang lượt 2 trên giao diện.
+2. `clarify_question` của lượt trước còn nguyên trong checkpoint, nên `pipeline.run_turn`
+   luôn rẽ vào nhánh hỏi lại dù lượt mới đã đủ thông tin.
+
+Sửa: bỏ reducer, và `run_graph()` khởi tạo lại toàn bộ trường theo lượt. Cố ý **không** làm vậy
+trong `resume_graph()` — luồng HITL phải dùng lại đúng state đang treo, xoá là mất ca chờ duyệt.
+
+### 🔍 Vì sao không test nào bắt được
+Toàn bộ kịch bản khi đó đều **một lượt**. Một lỗi thuần về *trạng thái giữa các lượt* thì kịch
+bản một lượt không thể chạm tới, dù có bao nhiêu cái đi nữa. Đã thêm kịch bản 8 hai lượt, kiểm
+đúng ba thứ: lượt 2 trích được mã chuyến, lượt 2 **không** còn `clarify_question`, và
+`tool_results` lượt 2 không dính kết quả lượt 1.
+
+### ⚠️ Việc đang chặn: cạn hạn mức LLM cả hai tầng
+Gemini trả 429 (hết hạn mức ngày), fallback TokenRouter trả 503 (model free chết). Thử key
+AgentRouter thì **mọi request đều bị `400 content-blocked`** với cả `gpt-5.6-sol`, `gpt-5.6`,
+`gpt-5-mini` — lỗi ở tài khoản/key, không phải ở prompt. Cần người dùng kiểm lại trên
+agentrouter.org trước khi trỏ `FALLBACK_*` sang đó.
+
+### ➡️ Việc tiếp theo
+T-014 (thống kê dashboard + cảnh báo hạn mức), T-015 (CSAT). Người dùng cần: gộp nhánh
+`feature/langgraph-agent-tools` vào `main` để Render chạy code mới, đặt `PYTHON_VERSION=3.13.7`.
+
+---
+
 ## [2026-08-26] – D10: Đóng Gói, Kịch Bản Demo, Và Một Lỗi Chỉ Lộ Ra Khi Diễn Thử (T-013)
 
 - **Agent / Người thực hiện**: Claude Code
