@@ -81,3 +81,6 @@ eval/reports/
 src/frontend/.next/
 src/frontend/node_modules/
 src/frontend/next-env.d.ts
+
+# Anh chup man hinh tam
+Screenshot*.png
