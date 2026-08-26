@@ -19,7 +19,9 @@ import asyncio
 import json
 import os
 import random
+import threading
 import time
+from collections import defaultdict, deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,16 +34,109 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+# Provider dự phòng cấu hình được hoàn toàn qua .env, miễn là nó theo chuẩn
+# OpenAI (`POST {base}/chat/completions`). OpenRouter, AgentRouter, hay bất kỳ
+# gateway nào cùng chuẩn đều dùng được mà KHÔNG phải sửa code — đổi provider chỉ
+# là đổi ba biến môi trường.
+FALLBACK_BASE_URL = os.getenv("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "google/gemini-2.5-flash-lite")
+FALLBACK_PROVIDER_NAME = os.getenv("FALLBACK_PROVIDER_NAME", "openrouter")
 
-# Ánh xạ sang model tương đương bên OpenRouter khi Gemini không phục vụ được.
-OPENROUTER_FALLBACK_MODEL = "google/gemini-2.5-flash-lite"
+# Tham số riêng của từng provider, truyền dưới dạng JSON trong biến môi trường để
+# không phải sửa code mỗi lần đổi nhà cung cấp. Ví dụ với model dòng reasoning:
+#   FALLBACK_EXTRA_BODY={"reasoning_effort":"low"}
+try:
+    FALLBACK_EXTRA_BODY: dict[str, Any] = json.loads(os.getenv("FALLBACK_EXTRA_BODY", "{}"))
+except json.JSONDecodeError:
+    FALLBACK_EXTRA_BODY = {}
+
+# Model dòng reasoning tiêu tốn `max_tokens` cho phần suy luận TRƯỚC khi phát ra
+# chữ nào. Đo trên qwen3.8: `max_tokens=300` cho ra 301 reasoning token và **0 ký
+# tự nội dung**. Sàn này bảo đảm phần suy luận không nuốt hết hạn mức.
+FALLBACK_MIN_MAX_TOKENS = int(os.getenv("FALLBACK_MIN_MAX_TOKENS", "0"))
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+# 400 CỐ Ý không nằm trong danh sách trên. `400 INVALID_ARGUMENT` nghĩa là request
+# sai — thử lại hay rơi sang provider khác đều chỉ che mất lỗi cấu hình. Đã mất
+# một vòng chẩn đoán vì nhầm 400 với dấu hiệu hết hạn mức, xem bug-history 2026-08-26.
+QUOTA_STATUS = {429}
 
 # Số lần thử Gemini trên đường stream tới người dùng trước khi rơi sang OpenRouter.
 # Cố tình để thấp: mỗi lần thử lại là một khoản trừ thẳng vào ngân sách 3 giây.
 WS_STREAM_MAX_ATTEMPTS = 2
+
+
+
+def _to_json_schema(gemini_schema: dict[str, Any]) -> dict[str, Any]:
+    """Chuyển schema kiểu Gemini (`"type": "OBJECT"`) sang JSON Schema chuẩn.
+
+    Cần thiết vì provider dự phòng theo chuẩn OpenAI dùng `response_format`, mà
+    chuẩn đó đòi tên kiểu viết thường. Không chuyển thì provider dự phòng tự bịa
+    tên trường: đo thực tế trên qwen3.8 cho ra `trip_id`/`item` thay vì
+    `ride_code`/`item_description`, khiến agent hỏi lại khách thông tin mà khách
+    vừa mới nói.
+    """
+    out: dict[str, Any] = {}
+    for key, value in gemini_schema.items():
+        if key == "type" and isinstance(value, str):
+            out["type"] = value.lower()
+        elif key == "properties" and isinstance(value, dict):
+            out["properties"] = {k: _to_json_schema(v) for k, v in value.items()}
+        elif key == "items" and isinstance(value, dict):
+            out["items"] = _to_json_schema(value)
+        else:
+            out[key] = value
+    return out
+
+
+class _RateLimiter:
+    """Cửa sổ trượt theo phút, dùng chung cho cả tiến trình.
+
+    Gói free của Gemini giới hạn **theo phút** cho **từng model**. Trước khi có
+    lớp này, bộ eval bắn ~37 lần gọi/phút vào giới hạn 15 — và chỉ sống sót nhờ
+    thử lại và rơi sang provider dự phòng, tức là đang lấy cơ chế chịu lỗi ra để
+    che một lỗi nhịp độ. Đợi chủ động rẻ hơn nhiều so với ăn 429 rồi thử lại.
+
+    Ghi chú quan trọng: hạn mức tính **theo model**, nên router và bước trả lời
+    dùng chung `gemini-3.5-flash-lite` nghĩa là chúng chia nhau CÙNG một rổ 15
+    lần/phút — mỗi lượt hội thoại tiêu 2 lần gọi.
+    """
+
+    def __init__(self, rpm: int) -> None:
+        self.rpm = rpm
+        self._calls: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def _wait_seconds(self, key: str) -> float:
+        now = time.monotonic()
+        window = self._calls[key]
+        while window and now - window[0] >= 60.0:
+            window.popleft()
+        if len(window) < self.rpm:
+            window.append(now)
+            return 0.0
+        return max(0.0, 60.0 - (now - window[0])) + 0.05
+
+    def acquire(self, key: str) -> None:
+        while True:
+            with self._lock:
+                wait = self._wait_seconds(key)
+            if wait <= 0:
+                return
+            time.sleep(wait)
+
+    async def acquire_async(self, key: str) -> None:
+        while True:
+            with self._lock:
+                wait = self._wait_seconds(key)
+            if wait <= 0:
+                return
+            await asyncio.sleep(wait)
+
+
+GEMINI_RPM = int(os.getenv("GEMINI_RPM", "15"))
+_gemini_limiter = _RateLimiter(GEMINI_RPM)
 
 
 class LLMError(RuntimeError):
@@ -79,7 +174,7 @@ class LLMResponse:
 @dataclass
 class LLMClient:
     router_model: str = field(default_factory=lambda: os.getenv("LLM_ROUTER_MODEL", "gemini-3.5-flash-lite"))
-    answer_model: str = field(default_factory=lambda: os.getenv("LLM_ANSWER_MODEL", "gemini-3.5-flash"))
+    answer_model: str = field(default_factory=lambda: os.getenv("LLM_ANSWER_MODEL", "gemini-3.5-flash-lite"))
     embedding_model: str = field(
         default_factory=lambda: os.getenv("LLM_EMBEDDING_MODEL", "gemini-embedding-001"))
     embedding_dim: int = field(default_factory=lambda: int(os.getenv("LLM_EMBEDDING_DIM", "768")))
@@ -88,7 +183,7 @@ class LLMClient:
 
     def __post_init__(self) -> None:
         self.gemini_key = os.getenv("GEMINI_API_KEY", "")
-        self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.fallback_key = os.getenv("FALLBACK_API_KEY") or os.getenv("OPENROUTER_API_KEY", "")
         if not self.gemini_key:
             raise RuntimeError("Thiếu GEMINI_API_KEY trong .env")
         self._client = httpx.Client(timeout=self.timeout_s)
@@ -96,7 +191,14 @@ class LLMClient:
     # -- Gemini ------------------------------------------------------------
     def _gemini_body(self, prompt: str, system: str | None, json_schema: dict | None,
                      max_tokens: int) -> dict:
-        cfg: dict[str, Any] = {"maxOutputTokens": max_tokens, "temperature": 0.0}
+        # `thinkingLevel: "low"` chứ KHÔNG phải `thinkingBudget: 0`.
+        # Đo ngày 2026-08-26 trên gemini-3.5-flash-lite: `thinkingBudget` bị từ
+        # chối 8/8 lần với `400 INVALID_ARGUMENT`, `thinkingLevel` chạy 8/8 lần.
+        cfg: dict[str, Any] = {
+            "maxOutputTokens": max_tokens,
+            "temperature": 0.0,
+            "thinkingConfig": {"thinkingLevel": "low"},
+        }
         if json_schema:
             cfg["responseMimeType"] = "application/json"
             cfg["responseSchema"] = json_schema
@@ -109,6 +211,7 @@ class LLMClient:
         return body
 
     def _gemini_stream(self, model: str, body: dict) -> tuple[str, int | None, dict]:
+        _gemini_limiter.acquire(model)
         url = f"{GEMINI_BASE}/models/{model}:streamGenerateContent?alt=sse"
         headers = {"x-goog-api-key": self.gemini_key, "Content-Type": "application/json"}
         chunks: list[str] = []
@@ -143,17 +246,25 @@ class LLMClient:
                     }
         return "".join(chunks), ttft_ms, usage
 
-    # -- OpenRouter (đường lui) --------------------------------------------
-    def _openrouter_call(self, prompt: str, system: str | None, max_tokens: int) -> tuple[str, dict]:
-        if not self.openrouter_key:
-            raise LLMError("Gemini hỏng và không có OPENROUTER_API_KEY để rơi sang")
+    # -- Provider dự phòng, chuẩn OpenAI (đường lui) -----------------------
+    def _fallback_call(self, prompt: str, system: str | None, max_tokens: int,
+                       json_schema: dict | None = None) -> tuple[str, dict]:
+        if not self.fallback_key:
+            raise LLMError(
+                "Gemini hỏng và không có khoá provider dự phòng "
+                "(FALLBACK_API_KEY hoặc OPENROUTER_API_KEY)")
         messages = ([{"role": "system", "content": system}] if system else []) + [
             {"role": "user", "content": prompt}]
         resp = self._client.post(
-            f"{OPENROUTER_BASE}/chat/completions",
-            headers={"Authorization": f"Bearer {self.openrouter_key}"},
-            json={"model": OPENROUTER_FALLBACK_MODEL, "messages": messages,
-                  "max_tokens": max_tokens, "temperature": 0.0},
+            f"{FALLBACK_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {self.fallback_key}"},
+            json={"model": FALLBACK_MODEL, "messages": messages,
+                  "max_tokens": max(max_tokens, FALLBACK_MIN_MAX_TOKENS),
+                  "temperature": 0.0,
+                  **({"response_format": {"type": "json_schema", "json_schema": {
+                      "name": "structured_output", "strict": False,
+                      "schema": _to_json_schema(json_schema)}}} if json_schema else {}),
+                  **FALLBACK_EXTRA_BODY},
         )
         resp.raise_for_status()
         data = resp.json()
@@ -189,6 +300,9 @@ class LLMClient:
                 status = exc.response.status_code if exc.response else 0
                 if status not in RETRYABLE_STATUS:
                     break
+                if status in QUOTA_STATUS:
+                    break  # hết hạn mức thì thử lại vô ích, rơi sang dự phòng ngay
+
                 # Backoff có nhiễu ngẫu nhiên: gói free Gemini giới hạn theo phút,
                 # thử lại đều nhịp sẽ va vào đúng cửa sổ bị chặn.
                 time.sleep(min(2 ** attempt + random.uniform(0, 0.5), 8))
@@ -197,9 +311,9 @@ class LLMClient:
                 time.sleep(min(2 ** attempt, 8))
 
         try:
-            text, usage = self._openrouter_call(prompt, system, max_tokens)
+            text, usage = self._fallback_call(prompt, system, max_tokens, json_schema)
             return LLMResponse(
-                text=text, provider="openrouter", model=OPENROUTER_FALLBACK_MODEL,
+                text=text, provider=FALLBACK_PROVIDER_NAME, model=FALLBACK_MODEL,
                 latency_ms=int((time.perf_counter() - started) * 1000),
                 prompt_tokens=usage.get("prompt_tokens", 0),
                 completion_tokens=usage.get("completion_tokens", 0),
@@ -231,6 +345,7 @@ class LLMClient:
 
 
     async def _astream_gemini(self, model: str, body: dict, started: float, emitted: list[bool]):
+        await _gemini_limiter.acquire_async(model)
         url = f"{GEMINI_BASE}/models/{model}:streamGenerateContent?alt=sse"
         headers = {"x-goog-api-key": self.gemini_key, "Content-Type": "application/json"}
         async with httpx.AsyncClient(timeout=self.timeout_s) as http:
@@ -263,18 +378,21 @@ class LLMClient:
                             "completion_tokens": meta.get("candidatesTokenCount", 0),
                         }
 
-    async def _astream_openrouter(self, prompt: str, system: str | None, max_tokens: int,
+    async def _astream_fallback(self, prompt: str, system: str | None, max_tokens: int,
                                   started: float, emitted: list[bool]):
-        if not self.openrouter_key:
-            raise LLMError("Gemini hỏng và không có OPENROUTER_API_KEY để rơi sang")
+        if not self.fallback_key:
+            raise LLMError(
+                "Gemini hỏng và không có khoá provider dự phòng "
+                "(FALLBACK_API_KEY hoặc OPENROUTER_API_KEY)")
         messages = ([{"role": "system", "content": system}] if system else []) + [
             {"role": "user", "content": prompt}]
-        payload = {"model": OPENROUTER_FALLBACK_MODEL, "messages": messages,
-                   "max_tokens": max_tokens, "temperature": 0.0, "stream": True,
-                   "stream_options": {"include_usage": True}}
-        headers = {"Authorization": f"Bearer {self.openrouter_key}"}
+        payload = {"model": FALLBACK_MODEL, "messages": messages,
+                   "max_tokens": max(max_tokens, FALLBACK_MIN_MAX_TOKENS),
+                   "temperature": 0.0, "stream": True,
+                   "stream_options": {"include_usage": True}, **FALLBACK_EXTRA_BODY}
+        headers = {"Authorization": f"Bearer {self.fallback_key}"}
         async with httpx.AsyncClient(timeout=self.timeout_s) as http:
-            async with http.stream("POST", f"{OPENROUTER_BASE}/chat/completions",
+            async with http.stream("POST", f"{FALLBACK_BASE_URL}/chat/completions",
                                    json=payload, headers=headers) as resp:
                 if resp.status_code >= 400:
                     await resp.aread()
@@ -299,8 +417,8 @@ class LLMClient:
                             yield text, ttft, None
                     if data.get("usage"):
                         yield "", None, {
-                            "provider": "openrouter",
-                            "model": OPENROUTER_FALLBACK_MODEL,
+                            "provider": FALLBACK_PROVIDER_NAME,
+                            "model": FALLBACK_MODEL,
                             "prompt_tokens": data["usage"].get("prompt_tokens", 0),
                             "completion_tokens": data["usage"].get("completion_tokens", 0),
                         }
@@ -335,7 +453,7 @@ class LLMClient:
                 return
             except _StreamHTTPError as exc:
                 last_error = exc
-                quota_exhausted = exc.status == 429
+                quota_exhausted = exc.status in QUOTA_STATUS
                 if emitted[0] or quota_exhausted or exc.status not in RETRYABLE_STATUS:
                     break
                 await asyncio.sleep(0.3 + random.uniform(0, 0.2))
@@ -348,7 +466,7 @@ class LLMClient:
         if emitted[0]:
             raise LLMError(f"Luồng đứt sau khi đã phát token: {last_error}")
 
-        async for item in self._astream_openrouter(prompt, system, max_tokens, started, emitted):
+        async for item in self._astream_fallback(prompt, system, max_tokens, started, emitted):
             yield item
 
     def embed(self, texts: list[str], *, task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
@@ -357,6 +475,7 @@ class LLMClient:
         Bắt buộc ép `outputDimensionality`: mặc định model trả 3072 chiều, trong
         khi index HNSW của pgvector chỉ hỗ trợ tối đa 2000 (ADR-008).
         """
+        _gemini_limiter.acquire(self.embedding_model)
         url = f"{GEMINI_BASE}/models/{self.embedding_model}:batchEmbedContents"
         headers = {"x-goog-api-key": self.gemini_key, "Content-Type": "application/json"}
         requests = [
