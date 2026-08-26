@@ -46,13 +46,16 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-- *(Trống)*
-- **Việc kế tiếp**: **T-006 — Frontend Next.js** (D9–D11). Backend đã đủ endpoint:
-  `/api/hitl/queue`, `/api/hitl/{code}/decide`, `/api/conversations/{id}/transcript`,
-  `/api/dashboard/summary`, và WebSocket đẩy sự kiện `hitl_result` về phiên khách.
-  Giao diện hiện mới là bản rút gọn từ T-009.
-- **Việc người dùng cần làm**: merge `feature/langgraph-agent-tools` vào `main` để bản
-  Render có LangGraph, PII và HITL. Hiện production vẫn chạy code trước T-004.
+- **T-006** — Frontend Next.js · `P0` · _Chờ kiểm chứng trực quan_
+  - **Đã làm tới đâu**: Đủ chức năng và `npm run build` sạch (có kiểm kiểu TypeScript).
+    Chat xử lý `token`/`tool`/`awaiting_human`/`hitl_result`, có skeleton và trạng thái rỗng.
+    Dashboard có hàng đợi duyệt, nút Duyệt/Từ chối (bắt buộc lý do), transcript + tool trace,
+    hàng chỉ số. Hệ thống thiết kế theo `ui-ux-guide.md` + `minimalist-skill`.
+  - **Vì sao chưa ✅**: chưa mở trang quan sát bằng mắt, chưa đo ở 375/768/1280px —
+    DoD mục 1 và mục 2 yêu cầu. **Người dùng đã quyết định chấp nhận trạng thái này**:
+    giao diện không phải trọng tâm chấm điểm, ưu tiên dồn cho độ tin cậy chức năng lõi.
+  - **Điều kiện để ✅**: người dùng tự mở xem và xác nhận, hoặc chạy kiểm trực quan sau khi
+    các task còn lại xong.
 
 ---
 
@@ -60,7 +63,6 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| T-006 | Frontend Next.js | D9–D11 | P0 | Chat khách (stream, trạng thái chờ duyệt) + Dashboard CSKH (hàng đợi, tool trace, nút duyệt) | Kiểm ở 375px / 768px / 1280px |
 | T-012 | Đo lại, tối ưu, chaos test | D12 | P0 | Chạy T-008 lần cuối đạt cả 3 ngưỡng; test tắt LLM/DB/tool xem fallback | Nếu intent < 90% → chữa theo `intent-taxonomy.md` mục 4. **Bổ sung eval đa lượt + faithfulness** — xem bug-history 2026-08-26 |
 | T-013 | Đóng gói & demo | D13 | P1 | README có sơ đồ kiến trúc, video demo, kịch bản 5 phút chạy trọn luồng HITL | Ngày này cũng là đệm dự phòng |
 | T-014 | Dashboard thống kê & cảnh báo hạn mức | D10–D11 | P1 | 4 chỉ số + 2 biểu đồ khớp DB; bơm dữ liệu vượt ngưỡng → hiện cảnh báo | F13, F14 — **được phép cắt nếu trễ tiến độ** |
