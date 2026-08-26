@@ -13,6 +13,46 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-27] – D12: Thu thập điểm hài lòng cuối phiên (T-015)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-015 ✅ (F16) — **hết backlog, 15/15 task đã xong**
+
+### 📊 Kết quả
+`pytest` **92/92** (thêm 13) · `npm run build` sạch · ruff sạch · chạy thật đầu-cuối qua WebSocket.
+
+### ✅ Đã làm được
+- `POST /api/chat/{thread_id}/csat` và `GET` để giao diện biết đã chấm hay chưa.
+- Khung chat hỏi mức 1–5 sau **2 lượt trả lời**, có nút bỏ qua.
+- `scripts/demo_reset.py` dựng sẵn 4 lượt đánh giá (5·4·5·3 → 4,25).
+- `docs/DEMO.md` thêm mục dashboard + cách bật cảnh báo hạn mức khi trình bày.
+
+### 🔍 Ba quyết định đáng ghi lại
+1. **Khoá theo `thread_id`, không phải `conversation_id`.** `conversation_id` không bao giờ gửi
+   ra client, mà khung chat chỉ cầm `thread_id` từ sự kiện `ready`. Bắt client gửi thứ nó không
+   có là tự tạo ra một chỗ để lộ định danh nội bộ.
+2. **Đối chiếu quyền sở hữu ngay trong câu lệnh ghi**, không kiểm ở một truy vấn riêng rồi mới
+   ghi. Kiểm-rồi-ghi mở ra khe thời gian giữa hai bước, và ở đây khe đó cho phép chấm điểm lên
+   hội thoại của người khác. Đã có bài kiểm riêng cho đúng tình huống này.
+3. **CSKH không chấm hộ được** (403). Điểm hài lòng là tiếng nói của khách; để tài khoản vận hành
+   tự chấm thì con số trên dashboard mất hết ý nghĩa.
+
+### 🧪 Chỗ dễ tưởng xong mà chưa xong
+Hội thoại chỉ được tạo khi khách gửi tin nhắn **đầu tiên**, nên `thread_id` có tồn tại trong bảng
+`conversations` hay không phụ thuộc vào việc phiên đã thực sự diễn ra. Đã chạy thật một phiên qua
+WebSocket (2 lượt) rồi mới chấm: `ready` → `thread_id` → POST 200 → GET đọc lại → dashboard nhích
+từ 4,25 (4 lượt) lên 4,4 (5 lượt). Kiểm bằng hàm không bắt được mắt xích này.
+
+Không thêm `pytest-asyncio`: bọc lời gọi ASGI trong `asyncio.run` để test vẫn là hàm đồng bộ —
+thêm một phụ thuộc chỉ để viết được `async def test_` là cái giá không đáng.
+
+### ➡️ Việc tiếp theo
+Backlog đã hết. Còn lại đều là việc của người dùng: gộp nhánh vào `main`, nhập key Gemini vào
+Render + đặt `PYTHON_VERSION=3.13.7`, quay video demo, và kiểm giao diện bằng mắt để đóng T-006.
+Tầng dự phòng LLM vẫn chết (TokenRouter 503) — Gemini hụt một nhịp là không có lưới đỡ.
+
+---
+
 ## [2026-08-26] – D11: Dashboard thống kê và cảnh báo hạn mức (T-014)
 
 - **Agent / Người thực hiện**: Claude Code

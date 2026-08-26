@@ -106,6 +106,18 @@ export async function login(email: string, password: string): Promise<Session> {
 export const fetchDashboard = (token: string) =>
   request<DashboardSummary>("/api/dashboard/summary", {}, token);
 
+export const submitCsat = (
+  token: string,
+  threadId: string,
+  score: number,
+  comment: string | null,
+) =>
+  request<{ score: number; comment: string | null; created_at: string }>(
+    `/api/chat/${encodeURIComponent(threadId)}/csat`,
+    { method: "POST", body: JSON.stringify({ score, comment }) },
+    token,
+  );
+
 export const fetchStats = (token: string) =>
   request<DashboardStats>("/api/dashboard/stats", {}, token);
 

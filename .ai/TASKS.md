@@ -61,9 +61,9 @@
 
 ## ☐ Hàng Đợi (Backlog)
 
-| ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
-|---|---|---|---|---|---|
-| T-015 | Thu thập CSAT | D11 | P2 | Cuối phiên hỏi mức 1–5, ghi vào bảng `csat` | F16 — cắt đầu tiên nếu thiếu thời gian |
+*Trống — toàn bộ 15 task đã xong. T-006 vẫn ở ⏳ vì chưa kiểm giao diện bằng mắt
+(người dùng đã quyết định chấp nhận). Việc còn lại nằm ngoài code: gộp nhánh vào
+`main`, nhập key vào Render, quay video demo.*
 
 ---
 
@@ -71,6 +71,7 @@
 
 | ID | Task | Ngày xong | Ghi chú / Link JOURNAL |
 |---|---|---|---|
+| T-015 | Thu thập CSAT cuối phiên (F16) | 2026-08-27 | JOURNAL `[2026-08-27] D12` — hỏi 1–5 sau 2 lượt trả lời; 13 test, trọng tâm là **không chấm được lên phiên của người khác**; chạy thật qua WebSocket → dashboard nhích 4,25 → 4,4 |
 | T-014 | Dashboard thống kê (F13) & cảnh báo hạn mức (F14) | 2026-08-26 | JOURNAL `[2026-08-26] D11` — 4 chỉ số + 2 biểu đồ, **10 test đối soát lại từng số bằng truy vấn độc lập**; bơm vượt ngưỡng qua HTTP: OK→DANGER→OK; mốc ngày sửa về giờ VN |
 | T-001 | Xây dựng bộ tài liệu tri thức RAG (7 file) | 2026-08-25 | JOURNAL `[2026-08-25]` — 7 file trong `data/knowledge_base/`, số liệu đối soát từ nguồn công bố |
 | T-007 | D1: Đóng băng đặc tả, intent taxonomy & 7 ADR | 2026-08-25 | JOURNAL `[2026-08-25]` — PRD, intent-taxonomy, ADR-001…007, architecture, glossary, codemap, DoD |

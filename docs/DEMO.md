@@ -133,7 +133,29 @@ khách không phải hỏi lại.
 
 ---
 
-## Phút 4:00–5:00 · Bằng chứng, không phải lời hứa
+## Phút 4:00–4:20 · Dashboard vận hành: thống kê và cảnh báo hạn mức
+
+Vẫn ở màn hình CSKH, chuyển sang tab **Tổng quan**. Chỉ vào bốn chỗ, đừng đọc hết mọi con số:
+
+- **Tỷ lệ tự xử lý** — bao nhiêu phần trăm hội thoại xong mà không cần tới người.
+- **Điểm hài lòng** — do chính khách chấm cuối phiên, không phải do hệ thống tự cho điểm mình.
+- **Token trong ngày** — đây là "chi phí", đối chiếu thẳng với hạn mức ngày.
+- **Biểu đồ 7 ngày** — hoạt động và tiền hoàn theo ngày.
+
+Rồi bật cảnh báo lên cho giám khảo thấy nó chạy thật:
+
+```bash
+.venv/Scripts/python.exe -m scripts.demo_quota_alert on   # tải lại trang → dải đỏ hiện
+.venv/Scripts/python.exe -m scripts.demo_quota_alert off  # tắt đi sau khi diễn xong
+```
+
+> "Hạn mức lấy từ bảng cấu hình chứ không nằm trong prompt, nên đổi ngưỡng không cần sửa code
+> và không cần deploy lại. Mốc ngày tính theo giờ Việt Nam — nếu để mặc định theo múi giờ của
+> cơ sở dữ liệu thì hạn mức chống gian lận sẽ reset lúc 7 giờ sáng."
+
+---
+
+## Phút 4:20–5:00 · Bằng chứng, không phải lời hứa
 
 **Tab 3**, đưa bảng số lên:
 
@@ -147,7 +169,7 @@ khách không phải hỏi lại.
 | Trung thực với nguồn | — | **100%** |
 
 > "Ba con số đầu là ràng buộc của đề bài. Chúng chạy được bằng **một lệnh**, và mỗi lần sửa
-> prompt chúng tôi chạy lại. Ngoài ra có 69 test tự động, trong đó 5 kịch bản chaos: tắt cả
+> prompt chúng tôi chạy lại. Ngoài ra có 92 test tự động, trong đó 5 kịch bản chaos: tắt cả
 > hai nhà cung cấp LLM, tắt cơ sở dữ liệu, tắt truy hồi — khách vẫn nhận được câu tử tế, và
 > sự cố vẫn được ghi lại."
 

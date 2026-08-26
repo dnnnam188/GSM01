@@ -105,6 +105,19 @@ def require_agent(user: Annotated[dict[str, Any], Depends(current_user)]) -> dic
     return user
 
 
+def require_customer(user: Annotated[dict[str, Any], Depends(current_user)]) -> dict[str, Any]:
+    """Điểm hài lòng là tiếng nói của khách. Tài khoản CSKH không được tự chấm hộ."""
+    if user["role"] != "customer":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Chỉ khách hàng mới chấm điểm được")
+    return user
+
+
+class CsatRequest(BaseModel):
+    # Chặn ngay ở biên: điểm ngoài 1–5 bị FastAPI trả 422 trước khi chạm tới DB.
+    score: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+
+
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
@@ -143,6 +156,35 @@ async def dashboard_stats(
 ) -> dict[str, Any]:
     """Thống kê đầy đủ + cảnh báo hạn mức (F13, F14). Chỉ CSKH xem được."""
     return await asyncio.to_thread(repo.dashboard_stats)
+
+
+@app.post("/api/chat/{thread_id}/csat")
+async def submit_csat(
+    thread_id: str,
+    body: CsatRequest,
+    user: Annotated[dict[str, Any], Depends(require_customer)],
+) -> dict[str, Any]:
+    """Khách chấm điểm phiên vừa rồi (F16).
+
+    Khoá theo `thread_id` vì đó là thứ khung chat cầm trong tay; `conversation_id`
+    không bao giờ được gửi ra phía client.
+    """
+    saved = await asyncio.to_thread(
+        repo.save_csat, thread_id, user["id"], body.score, body.comment)
+    if saved is None:
+        # Không tồn tại và không-phải-của-bạn trả về cùng một câu: nói rõ cái nào
+        # là chỉ ra cho người ngoài biết thread_id nào có thật.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy phiên trò chuyện")
+    return saved
+
+
+@app.get("/api/chat/{thread_id}/csat")
+async def read_csat(
+    thread_id: str,
+    user: Annotated[dict[str, Any], Depends(require_customer)],
+) -> dict[str, Any]:
+    rating = await asyncio.to_thread(repo.get_csat, thread_id, user["id"])
+    return {"rating": rating}
 
 
 @app.get("/api/conversations/{conversation_id}/transcript")

@@ -281,6 +281,49 @@ def _quota_alert(key: str, label: str, current: int, cap: int | None,
             "unit": unit, "ratio_percent": round(ratio * 100, 1), "level": level}
 
 
+def save_csat(thread_id: str, customer_id: str, score: int,
+              comment: str | None) -> dict[str, Any] | None:
+    """Ghi điểm hài lòng cuối phiên (F16). Trả None nếu phiên không thuộc về khách này.
+
+    Đối chiếu quyền sở hữu **trong chính câu lệnh ghi**, không kiểm ở một truy vấn
+    riêng rồi mới ghi: kiểm rồi mới ghi là mở ra một khe thời gian giữa hai bước,
+    và ở đây nó cho phép chấm điểm lên hội thoại của người khác.
+
+    `ON CONFLICT` để khách đổi ý được — bảng có ràng buộc UNIQUE trên
+    `conversation_id`, nên nếu không có nhánh này thì lần chấm thứ hai sẽ nổ lỗi
+    500 thay vì cập nhật điểm.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO csat_ratings (conversation_id, customer_id, score, comment)
+            SELECT c.id, c.customer_id, %s, %s
+            FROM conversations c
+            WHERE c.thread_id = %s AND c.customer_id = %s
+            ON CONFLICT (conversation_id) DO UPDATE
+                SET score = EXCLUDED.score,
+                    comment = EXCLUDED.comment,
+                    created_at = now()
+            RETURNING score, comment, created_at
+        """, (score, comment, thread_id, customer_id))
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {"score": row[0], "comment": row[1], "created_at": row[2].isoformat()}
+
+
+def get_csat(thread_id: str, customer_id: str) -> dict[str, Any] | None:
+    """Điểm khách đã chấm cho phiên này, nếu có — để giao diện đừng hỏi lại."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT r.score, r.comment
+            FROM csat_ratings r
+            JOIN conversations c ON c.id = r.conversation_id
+            WHERE c.thread_id = %s AND c.customer_id = %s
+        """, (thread_id, customer_id))
+        row = cur.fetchone()
+    return {"score": row[0], "comment": row[1]} if row else None
+
+
 def get_business_config() -> dict[str, Any]:
     """Ngưỡng nghiệp vụ đọc lúc chạy, không hardcode (ADR-006)."""
     casts = {"int": int, "float": float, "bool": lambda v: v.lower() == "true"}
