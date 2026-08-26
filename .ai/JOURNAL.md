@@ -13,6 +13,98 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-08-26] – D4: Vertical Slice Chạy Đầu-Cuối Ở Cục Bộ (T-009, chưa deploy)
+
+- **Agent / Người thực hiện**: Claude Code
+- **Task liên quan**: T-009 ⏳ (phần code xong, phần deploy cần người dùng bấm)
+
+### 📊 Kết quả kiểm chứng
+`.venv/Scripts/python.exe -m tests.test_e2e_slice` → **28/28 phép kiểm đạt** (cục bộ).
+Bao gồm: đăng nhập 2 vai trò · sai mật khẩu → 401 · khách gọi dashboard CSKH → **403** ·
+token giả → 401 · WebSocket streaming 2 lượt · ghi đủ `messages` (có `ttft_ms`, token) ·
+mỗi lượt đúng 1 dòng `route_intent` trong `tool_calls` · CSKH đọc được transcript + tool trace.
+
+TTFT đo được khi Gemini còn hạn mức: **1741 ms / 1473 ms**.
+
+### ✅ Đã làm được
+- `config/settings.py` — chặn khởi động nếu `ENVIRONMENT=production` mà `JWT_SECRET` vẫn là
+  giá trị mẫu. Bổ sung 8 biến còn thiếu vào `.env` (secret sinh ngẫu nhiên).
+- `api/security.py` + `main.py` — JWT 2 vai trò, `require_agent()` chặn ở **server**.
+  Đăng nhập sai mật khẩu và email không tồn tại trả **cùng một thông báo**, không lộ email nào có thật.
+- `db/repository.py` — truy vấn tầng hội thoại, gồm `log_tool_call()` trả `None` khi trùng
+  `idempotency_key` (ADR-005) để T-004 dùng lại cho 8 tool thật.
+- `agent/pipeline.py` — một lượt đi trọn: route → RAG → stream → ghi vết, có nhánh xuống cấp
+  ở mọi chặng. `run_turn()` sẽ được T-004 thay ruột bằng LangGraph, hợp đồng sự kiện giữ nguyên.
+- `src/frontend/` — Next.js 15, đăng nhập + chat streaming + dashboard rút gọn.
+  `npm run build` sạch, có kiểm kiểu TypeScript. CORS đã thông từ `localhost:3000`.
+- `render.yaml`, `requirements.txt`, `docs/DEPLOY.md` — sẵn sàng deploy.
+
+### 🐞 Ba lỗi thật, bắt được nhờ chạy chứ không nhờ đọc code
+
+**1. `astream()` không có fallback — ADR-001 mới thực hiện một nửa.**
+`generate()` (dùng cho eval) có retry + rơi sang OpenRouter, nhưng `astream()` — **đường mà
+người dùng thật đi** — thì không. Lần chạy đầu Gemini trả 429/503, mọi câu trả lời rơi về câu
+xin lỗi. Đã viết `_astream_openrouter()` streaming SSE và nối vào.
+
+**2. Thử lại khi 429 làm vỡ ngân sách độ trễ.**
+Sau khi thêm fallback, TTFT đo được **12.500 ms** — vì nó thử lại Gemini 3 lần có backoff rồi
+mới rơi. Hạn mức không hồi lại trong 4 giây, nên thử lại chỉ đốt sạch ngân sách rồi vẫn hỏng.
+Đổi chính sách: **429 → rơi thẳng sang OpenRouter, không thử lại**; 5xx/timeout mới thử lại
+đúng một lần. TTFT về **1488/2021 ms**. Đây là chỗ chính sách retry của đường người dùng
+**phải khác** đường eval — đã ghi cảnh báo vào codemap để không bị "thống nhất" nhầm về sau.
+
+**3. RAG đa lượt trả lời SAI SỐ LIỆU.**
+Lượt 1 hỏi phí huỷ taxi → đúng 20.000đ. Lượt 2 hỏi "Thế còn xe máy thì sao?" → agent trả lời
+**"phí hủy Bike là 13.800 VNĐ"**. Sai — 13.800đ là *giá mở cửa*, phí huỷ Bike là 10.000đ.
+Nguyên nhân: câu nối tiếp được đem đi truy hồi **nguyên văn**; nó không mang ngữ cảnh "phí huỷ"
+nên kéo về file biểu phí và model lấy nhầm con số. **Truy hồi không có bộ nhớ, chỉ có câu chữ.**
+Đã thêm `standalone_query` vào structured output của router — model tự viết lại câu hỏi thành
+dạng tự đứng được, và pipeline truy hồi bằng câu đó. Gộp vào **cùng lời gọi LLM đang có** nên
+không tốn thêm độ trễ. Kiểm chứng lại: viết lại thành "Phí hủy chuyến với dịch vụ xe máy của
+Xanh SM là bao nhiêu tiền?" → nguồn đúng → trả lời **10.000đ**. Ghi vào `bug-history.md`.
+
+Ngoài ra sửa một lỗi của chính mình: pipeline ghi cứng `provider="gemini"` vào bảng `messages`,
+sẽ sai mỗi khi rơi sang OpenRouter. Nay lấy provider thật từ gói usage.
+
+### ⚠️ Điều quan trọng nhất cần biết
+**Recall@3 = 100% ở D3 không hề bảo đảm câu trả lời đúng.** Lỗi số 3 lọt qua toàn bộ bộ eval,
+vì eval chỉ đo *truy hồi đúng file hay không* trên **câu hỏi đơn lẻ** — không đo hội thoại
+nhiều lượt, không đo con số trong câu trả lời có khớp nguồn hay không. Đã đưa vào T-012:
+bổ sung eval đa lượt + chỉ số faithfulness.
+
+### 📁 File đã thay đổi
+- `src/backend/main.py`, `config/settings.py`, `api/security.py`, `db/repository.py`,
+  `agent/pipeline.py` — **mới**
+- `src/backend/llm/client.py` — thêm `astream()` có fallback, chính sách retry riêng
+- `src/backend/agent/router.py` — thêm `standalone_query`, nhận thêm lịch sử hội thoại
+- `src/frontend/**` — **mới** (Next.js 15, build sạch)
+- `tests/test_e2e_slice.py` — **mới**, 28 phép kiểm, đọc `GSM_BASE`/`GSM_WS` để nhắm bản deploy
+- `render.yaml`, `requirements.txt`, `docs/DEPLOY.md`, `.env.example` — **mới / cập nhật**
+- `pyproject.toml` — bỏ `passlib` (không dùng), thêm `bcrypt`, `pydantic[email]`
+- `.ai/context/bug-history.md`, `codemap.md`, `TASKS.md` — cập nhật
+
+### ⏳ Đang dở
+- **T-009 chưa đóng được**: phần code xong nhưng **chưa deploy**. Deploy cần đăng nhập tài
+  khoản Render và Vercel — việc này người dùng phải tự làm.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- **Hạn mức gói free của Gemini đã cạn** trong phiên (do 130 phép đo ở D3 + các lần chạy thử).
+  Lượt cuối rơi sang OpenRouter, TTFT lên 4.923 ms — **vượt ngưỡng 3 giây**. Đây là giới hạn
+  môi trường, không phải lỗi code, nhưng **phải đo lại khi hạn mức hồi** trước khi kết luận.
+  Nếu demo trúng lúc hết hạn mức thì sẽ không đạt ngưỡng — cân nhắc bật billing cho Gemini.
+- Mất một vòng debug vì chạy `uvicorn` **không có `--reload`**: sửa code xong test vẫn chạy
+  code cũ. Đã ghi vào codemap.
+- Chưa kiểm chứng: chưa tool nghiệp vụ nào chạy thật, chưa có LangGraph, chưa có HITL,
+  chưa token hoá PII, **chưa deploy**.
+
+### ➡️ Việc tiếp theo
+1. **Người dùng bấm deploy** theo `docs/DEPLOY.md` (Render trước, Vercel sau, rồi cập nhật
+   `CORS_ORIGINS`). Xong thì chạy lại kịch bản kiểm chứng nhắm vào bản online, phải đạt 28/28.
+2. **D6–D8 (T-004, T-010, T-011)**: thay ruột `run_turn()` bằng LangGraph, nối 8 tool thật,
+   token hoá PII đưa 5/20 về 0/20, và HITL bằng `interrupt()`.
+
+---
+
 ## [2026-08-26] – D3: Bộ Đo Nghiệm Thu Chạy Ra Số Thật (T-008)
 
 - **Agent / Người thực hiện**: Claude Code

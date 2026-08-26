@@ -15,6 +15,7 @@ Ba việc lớp này làm mà lời gọi HTTP trần không làm:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import random
@@ -38,9 +39,21 @@ OPENROUTER_FALLBACK_MODEL = "google/gemini-2.5-flash-lite"
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
+# Số lần thử Gemini trên đường stream tới người dùng trước khi rơi sang OpenRouter.
+# Cố tình để thấp: mỗi lần thử lại là một khoản trừ thẳng vào ngân sách 3 giây.
+WS_STREAM_MAX_ATTEMPTS = 2
+
 
 class LLMError(RuntimeError):
     """Cả hai provider đều hỏng. Graph phải trả lời an toàn thay vì văng lỗi."""
+
+
+class _StreamHTTPError(Exception):
+    """Lỗi HTTP trong lúc stream — mang theo status để quyết định có thử lại không."""
+
+    def __init__(self, status: int, detail: str) -> None:
+        super().__init__(f"Gemini {status}: {detail}")
+        self.status = status
 
 
 @dataclass
@@ -215,6 +228,128 @@ class LLMClient:
                     for part in cand.get("content", {}).get("parts", []):
                         if part.get("text"):
                             yield part["text"]
+
+
+    async def _astream_gemini(self, model: str, body: dict, started: float, emitted: list[bool]):
+        url = f"{GEMINI_BASE}/models/{model}:streamGenerateContent?alt=sse"
+        headers = {"x-goog-api-key": self.gemini_key, "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=self.timeout_s) as http:
+            async with http.stream("POST", url, json=body, headers=headers) as resp:
+                if resp.status_code >= 400:
+                    await resp.aread()
+                    raise _StreamHTTPError(resp.status_code, resp.text[:200])
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        payload = json.loads(line[5:])
+                    except json.JSONDecodeError:
+                        continue
+                    for cand in payload.get("candidates", []):
+                        for part in cand.get("content", {}).get("parts", []):
+                            text = part.get("text")
+                            if text:
+                                ttft = None
+                                if not emitted[0]:
+                                    ttft = int((time.perf_counter() - started) * 1000)
+                                    emitted[0] = True
+                                yield text, ttft, None
+                    if "usageMetadata" in payload:
+                        meta = payload["usageMetadata"]
+                        yield "", None, {
+                            "provider": "gemini",
+                            "model": model,
+                            "prompt_tokens": meta.get("promptTokenCount", 0),
+                            "completion_tokens": meta.get("candidatesTokenCount", 0),
+                        }
+
+    async def _astream_openrouter(self, prompt: str, system: str | None, max_tokens: int,
+                                  started: float, emitted: list[bool]):
+        if not self.openrouter_key:
+            raise LLMError("Gemini hỏng và không có OPENROUTER_API_KEY để rơi sang")
+        messages = ([{"role": "system", "content": system}] if system else []) + [
+            {"role": "user", "content": prompt}]
+        payload = {"model": OPENROUTER_FALLBACK_MODEL, "messages": messages,
+                   "max_tokens": max_tokens, "temperature": 0.0, "stream": True,
+                   "stream_options": {"include_usage": True}}
+        headers = {"Authorization": f"Bearer {self.openrouter_key}"}
+        async with httpx.AsyncClient(timeout=self.timeout_s) as http:
+            async with http.stream("POST", f"{OPENROUTER_BASE}/chat/completions",
+                                   json=payload, headers=headers) as resp:
+                if resp.status_code >= 400:
+                    await resp.aread()
+                    raise LLMError(f"OpenRouter {resp.status_code}: {resp.text[:200]}")
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    chunk = line[5:].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    for choice in data.get("choices", []):
+                        text = (choice.get("delta") or {}).get("content")
+                        if text:
+                            ttft = None
+                            if not emitted[0]:
+                                ttft = int((time.perf_counter() - started) * 1000)
+                                emitted[0] = True
+                            yield text, ttft, None
+                    if data.get("usage"):
+                        yield "", None, {
+                            "provider": "openrouter",
+                            "model": OPENROUTER_FALLBACK_MODEL,
+                            "prompt_tokens": data["usage"].get("prompt_tokens", 0),
+                            "completion_tokens": data["usage"].get("completion_tokens", 0),
+                        }
+
+    async def astream(self, prompt: str, *, system: str | None = None,
+                      model: str | None = None, max_tokens: int = 1024):
+        """Stream bất đồng bộ cho WebSocket, có thử lại và có đường lui OpenRouter.
+
+        Yield tuple (text_delta, ttft_ms, usage). `ttft_ms` chỉ khác None ở đúng
+        mảnh đầu tiên — đó là con số dùng nghiệm thu ngưỡng 3 giây.
+
+        Quy tắc then chốt: **chỉ được thử lại khi CHƯA phát ra token nào**. Nếu
+        luồng đứt giữa chừng, gọi lại sẽ sinh ra câu trả lời chắp vá hai nửa
+        khác nhau — với khách hàng thì đó còn tệ hơn là một câu xin lỗi.
+        """
+        model = model or self.answer_model
+        body = self._gemini_body(prompt, system, None, max_tokens)
+        started = time.perf_counter()
+        emitted = [False]
+        last_error: Exception | None = None
+
+        # Đường người dùng thật chỉ có ngân sách 3 giây, nên chính sách thử lại ở
+        # đây KHÁC với `generate()` (dùng cho eval, nơi độ trễ không quan trọng):
+        #   429 -> rơi thẳng sang OpenRouter, KHÔNG thử lại. Hạn mức không hồi
+        #          lại trong vài giây; thử lại chỉ đốt sạch ngân sách độ trễ rồi
+        #          vẫn hỏng. Đo thực tế: thử lại 3 lần đẩy TTFT lên 12,5 giây.
+        #   5xx / timeout -> thử lại đúng MỘT lần rồi mới rơi.
+        for _attempt in range(1, WS_STREAM_MAX_ATTEMPTS + 1):
+            try:
+                async for item in self._astream_gemini(model, body, started, emitted):
+                    yield item
+                return
+            except _StreamHTTPError as exc:
+                last_error = exc
+                quota_exhausted = exc.status == 429
+                if emitted[0] or quota_exhausted or exc.status not in RETRYABLE_STATUS:
+                    break
+                await asyncio.sleep(0.3 + random.uniform(0, 0.2))
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_error = exc
+                if emitted[0]:
+                    break
+                await asyncio.sleep(0.3)
+
+        if emitted[0]:
+            raise LLMError(f"Luồng đứt sau khi đã phát token: {last_error}")
+
+        async for item in self._astream_openrouter(prompt, system, max_tokens, started, emitted):
+            yield item
 
     def embed(self, texts: list[str], *, task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
         """Nhúng nhiều đoạn trong một lời gọi.

@@ -40,8 +40,9 @@ ROUTER_SCHEMA = {
             },
         },
         "missing_slots": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "standalone_query": {"type": "STRING"},
     },
-    "required": ["intent", "confidence", "slots", "missing_slots"],
+    "required": ["intent", "confidence", "slots", "missing_slots", "standalone_query"],
 }
 
 SYSTEM_PROMPT = """Bạn là bộ phân loại ý định của tổng đài CSKH hãng gọi xe Xanh SM.
@@ -88,7 +89,13 @@ Hãy hiểu ý định thật, đừng bắt bẻ chính tả.
 
 confidence: 0.0-1.0, phản ánh mức chắc chắn thật. Câu mơ hồ thì để dưới 0.6.
 slots: chỉ điền trường nào khách NÓI RÕ. Tuyệt đối không bịa mã chuyến hay địa chỉ.
-missing_slots: liệt kê thông tin còn thiếu để thực hiện được yêu cầu."""
+missing_slots: liệt kê thông tin còn thiếu để thực hiện được yêu cầu.
+
+standalone_query: viết lại tin nhắn thành MỘT câu hỏi đầy đủ, tự đứng được mà không cần
+đọc lịch sử hội thoại. Đây là câu dùng để tra cứu kho tri thức, nên nó phải mang đủ ngữ
+cảnh. Ví dụ, nếu trước đó khách hỏi về phí huỷ chuyến của taxi và giờ nhắn "thế còn xe máy
+thì sao?", thì standalone_query phải là "phí huỷ chuyến với xe máy là bao nhiêu".
+Nếu tin nhắn đã tự đứng được rồi thì chép lại nguyên văn."""
 
 
 @dataclass
@@ -97,6 +104,7 @@ class RouteResult:
     confidence: float
     slots: dict
     missing_slots: list[str]
+    standalone_query: str
     needs_clarification: bool
     raw: LLMResponse
 
@@ -105,10 +113,23 @@ class RouteResult:
         return self.raw.ttft_ms
 
 
-def route(message: str, client: LLMClient | None = None) -> RouteResult:
+def route(message: str, history: list[dict] | None = None,
+          client: LLMClient | None = None) -> RouteResult:
+    """Phân loại + trích slot + viết lại câu hỏi, trong ĐÚNG MỘT lần gọi LLM.
+
+    `standalone_query` được gộp vào đây thay vì gọi thêm một lượt riêng: viết lại
+    câu hỏi là việc bắt buộc với hội thoại nhiều lượt (câu "thế còn xe máy thì
+    sao?" đem đi tra thẳng sẽ kéo về nhầm tài liệu và agent trả lời sai số liệu),
+    nhưng thêm một lượt gọi model nữa là phá ngân sách 3 giây.
+    """
     client = client or LLMClient()
+    context = ""
+    if history:
+        lines = [f"{'Khách' if m['role'] == 'user' else 'Trợ lý'}: {m['content'][:300]}"
+                 for m in history[-4:]]
+        context = "Lịch sử hội thoại gần đây:\n" + "\n".join(lines) + "\n\n"
     response = client.generate(
-        prompt=f"Tin nhắn của khách:\n{message}",
+        prompt=f"{context}Tin nhắn của khách:\n{message}",
         system=SYSTEM_PROMPT,
         model=client.router_model,
         json_schema=ROUTER_SCHEMA,
@@ -124,6 +145,7 @@ def route(message: str, client: LLMClient | None = None) -> RouteResult:
         confidence=confidence,
         slots={k: v for k, v in (data.get("slots") or {}).items() if v not in (None, "")},
         missing_slots=list(data.get("missing_slots") or []),
+        standalone_query=(data.get("standalone_query") or "").strip() or message,
         needs_clarification=confidence < CONFIDENCE_FLOOR,
         raw=response,
     )

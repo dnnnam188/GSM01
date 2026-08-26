@@ -2,9 +2,10 @@
 
 > 🎯 **Mục đích**: Trả lời nhanh câu hỏi *"Muốn sửa X thì mở file nào?"* để Agent không phải quét cả repo.
 >
-> ⚠️ **TRẠNG THÁI (2026-08-26)**: đã có tầng dữ liệu, hợp đồng tool, LLM client, RAG,
-> router và bộ eval (T-002, T-003, T-008). Tầng LangGraph, API, HITL và giao diện
-> **chưa tồn tại** — mục 3 là kế hoạch, đừng trích dẫn như thể đã có.
+> ⚠️ **TRẠNG THÁI (2026-08-26)**: chạy được đầu-cuối ở cục bộ — đăng nhập JWT, WebSocket
+> streaming, RAG, ghi vết, giao diện Next.js (T-002, T-003, T-008, T-009).
+> **Chưa có**: LangGraph (T-004), tool ghi dữ liệu, HITL (T-011), token hoá PII (T-010),
+> và **chưa deploy lên Render/Vercel** — cần tài khoản của người dùng.
 
 ## 1. Điểm Vào Của Dự Án (Entry Points)
 
@@ -17,8 +18,9 @@
 | Seed dữ liệu | `src/backend/db/seed.py` | ✅ Đã có |
 | Hợp đồng tool | `src/backend/tools/contracts.py` | ✅ Đã có |
 | Tài liệu schema | `docs/DATA-MODEL.md` | ✅ Đã có |
-| Backend | `src/backend/main.py` | ⏳ Chưa có (T-009) |
-| Frontend | `src/frontend/` (Next.js) | ⏳ Chưa có (T-006) |
+| Backend | `src/backend/main.py` | ✅ `uvicorn src.backend.main:app --port 8000` |
+| Frontend | `src/frontend/` (Next.js 15) | ✅ `npm run dev` trong `src/frontend/` |
+| Cấu hình deploy | `render.yaml`, `requirements.txt`, `docs/DEPLOY.md` | ✅ Sẵn sàng, chưa bấm deploy |
 | Bộ eval | `eval/run_eval.py` | ✅ Đã có, chạy ra số thật |
 | Biến môi trường | `.env.example` | ✅ Đã có |
 | Phụ thuộc Python | `pyproject.toml` | ✅ Đã có (`uv`, venv tại `.venv/`) |
@@ -46,6 +48,12 @@
 | Truy hồi RAG | `src/backend/rag/retriever.py` → `retrieve()` | Dùng `RETRIEVAL_QUERY` cho câu hỏi, `RETRIEVAL_DOCUMENT` cho tài liệu |
 | Phát hiện rò rỉ PII | `src/backend/pii/detector.py` → `find_leaks()` | So khớp với PII thật trong DB, không đoán theo mẫu |
 | Bộ dữ liệu có nhãn | `eval/datasets/build_datasets.py` | Nhãn gán tay, sửa xong phải chạy lại để sinh `.jsonl` |
+| **Một lượt hội thoại** | `src/backend/agent/pipeline.py` → `run_turn()` | T-004 sẽ thay ruột bằng LangGraph, giữ nguyên hợp đồng sự kiện |
+| **Viết lại câu hỏi đa lượt** | `src/backend/agent/router.py` → `standalone_query` | Bỏ đi là RAG trả lời sai số liệu, xem bug-history 2026-08-26 |
+| Endpoint HTTP + WebSocket | `src/backend/main.py` | `/api/auth/login`, `/api/dashboard/summary`, `/ws/chat` |
+| Chặn quyền theo vai trò | `src/backend/main.py` → `require_agent()` | Kiểm ở server, giao diện không phải nơi kiểm |
+| Truy vấn DB tầng hội thoại | `src/backend/db/repository.py` | Đồng bộ; API bọc bằng `asyncio.to_thread` |
+| Giao diện chat + dashboard | `src/frontend/app/page.tsx` | Bản rút gọn, T-006 làm đầy đủ |
 | Sinh idempotency key | `src/backend/tools/contracts.py` → `WriteToolInput.build_idempotency_key()` | Đổi cách sinh = mất tác dụng chống trùng (ADR-005) |
 | Nhãn trường PII | `src/backend/tools/contracts.py` → `pii_field()`, `pii_fields_of()` | Tokenizer ở T-010 đọc nhãn này |
 | Kết nối DB | `src/backend/db/connection.py` → `get_connection()` | Đọc `DATABASE_URL` từ `.env` |
@@ -83,6 +91,8 @@ eval/
 | `pyproject.toml` → `requires-python` | Khai báo `>=3.11` nên **không được dùng cú pháp PEP 695** (`class Foo[T]`) | `ruff check` sẽ báo `invalid-syntax` nếu vi phạm |
 | `src/backend/agent/router.py` | Prompt này quyết định con số nghiệm thu quan trọng nhất | Đổi một chữ cũng phải đo lại; đừng sửa "cho gọn" |
 | `src/backend/rag/indexer.py` | `TRUNCATE knowledge_chunks` mỗi lần chạy, và tốn hạn mức embed | Chỉ chạy lại khi kho tri thức thay đổi |
+| `src/backend/llm/client.py` → `astream()` | Chính sách thử lại **khác** `generate()`: 429 rơi thẳng sang OpenRouter, không thử lại. Thử lại 3 lần đẩy TTFT lên 12,5 giây | Đừng "thống nhất" hai chính sách này làm một |
+| `uvicorn` chạy không có `--reload` | Sửa code xong mà không khởi động lại thì test vẫn chạy code cũ — đã mất một vòng debug vì việc này | Dùng `--reload` khi đang phát triển |
 
 ## 5. Nơi KHÔNG Được Sửa Tay
 

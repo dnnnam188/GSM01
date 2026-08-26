@@ -76,3 +76,8 @@ logs/
 
 # Báo cáo eval sinh tự động
 eval/reports/
+
+# Next.js
+src/frontend/.next/
+src/frontend/node_modules/
+src/frontend/next-env.d.ts

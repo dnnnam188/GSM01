@@ -1,0 +1,43 @@
+# Cấu hình deploy backend lên Render (ADR-001, ADR-002).
+# Bí mật KHÔNG nằm trong file này — đặt trong Environment của dashboard Render.
+services:
+  - type: web
+    name: gsm01-api
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.7"
+      - key: ENVIRONMENT
+        value: production
+      # Model đã đo TTFT thật — xem ADR-008. Đừng đổi khi chưa đo lại.
+      - key: LLM_ROUTER_MODEL
+        value: gemini-3.5-flash-lite
+      - key: LLM_ANSWER_MODEL
+        value: gemini-3.5-flash
+      - key: LLM_EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: LLM_EMBEDDING_DIM
+        value: "768"
+      - key: JWT_EXPIRE_MINUTES
+        value: "720"
+      # Bốn biến dưới đây phải nhập tay trong dashboard Render:
+      #   DATABASE_URL      — connection string của Neon (có ?sslmode=require)
+      #   GEMINI_API_KEY
+      #   OPENROUTER_API_KEY
+      #   JWT_SECRET        — chuỗi ngẫu nhiên MỚI, không dùng lại của máy cá nhân
+      #   CORS_ORIGINS      — https://<tên-app>.vercel.app
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

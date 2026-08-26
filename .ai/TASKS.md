@@ -46,11 +46,19 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-- *(Trống — không có task nào đang cầm dở.)*
-- **Việc kế tiếp phải cầm**: **T-009 — Vertical slice + deploy sớm** (D4–D5 · 28–29/08).
-  Đã có sẵn để lắp vào: `LLMClient` (fallback provider), `retrieve()` (RAG), `route()` (intent).
-  Việc còn thiếu: JWT 2 vai trò, WebSocket streaming, ghi `messages`/`tool_calls`, và
-  **deploy thật lên Vercel + Render ngay trong D5** — không để cuối sprint.
+- **T-009** — Vertical slice + deploy · `P0` · _Người cầm: Claude Code_
+  - **Đã làm tới đâu**: Chạy được đầu-cuối **ở cục bộ**, 28/28 phép kiểm đạt
+    (`.venv/Scripts/python.exe -m tests.test_e2e_slice`). Có JWT 2 vai trò, WebSocket
+    streaming, RAG, ghi `messages`/`tool_calls`, giao diện Next.js build sạch.
+    Đã chuẩn bị sẵn `render.yaml`, `requirements.txt`, `docs/DEPLOY.md`.
+  - **Bước tiếp theo — CẦN NGƯỜI DÙNG LÀM**: bấm deploy. Không tự làm được vì cần đăng nhập
+    tài khoản Render và Vercel. Làm theo `docs/DEPLOY.md`, rồi chạy lại kịch bản kiểm chứng
+    nhắm vào bản online:
+    `GSM_BASE=https://<app>.onrender.com GSM_WS=wss://<app>.onrender.com`
+    `.venv/Scripts/python.exe -m tests.test_e2e_slice` — phải đạt 28/28.
+  - **Vướng mắc**: Hạn mức gói free của Gemini đã cạn trong lúc chạy eval, nên các phép đo
+    TTFT cuối phiên rơi qua OpenRouter và chậm hơn (4,9s ở một lượt). **Phải đo lại khi hạn
+    mức hồi** trước khi kết luận về ngưỡng 3 giây.
 
 ---
 
@@ -58,13 +66,12 @@
 
 | ID | Task | Ngày | Ưu tiên | Nghiệm thu (1 dòng) | Ghi chú |
 |---|---|---|---|---|---|
-| T-009 | Vertical slice + **deploy sớm** | D4–D5 | P0 | Login JWT → WS stream → `fare.inquiry` qua RAG → ghi log, chạy được **trên Vercel + Render**, không phải localhost | Deploy là rủi ro lớn nhất → phải nổ ở D5, không để cuối sprint |
-| T-004 | LangGraph state & router | D6–D8 | P0 | Router 1 lần gọi LLM ra `{intent, confidence, slots}`; rẽ nhánh đúng 10 nhãn; slot-filling hỏi lại khi thiếu | Đo lại bằng T-008 sau khi xong |
+| T-004 | LangGraph state & tool thật | D6–D8 | P0 | Thay ruột `pipeline.run_turn()` bằng graph; **nối 8 tool thật** (hiện chưa tool nào chạy được); slot-filling hỏi lại khi thiếu | Router + hợp đồng sự kiện đã có, giữ nguyên. Đo lại bằng T-008 |
 | T-010 | Guardrail PII + fallback | D6–D8 | P0 | Đưa số ca lộ PII từ **5/20 (raw) và 2/20 (masked) về 0/20** bằng token hoá trước khi vào context; tắt DB/LLM → agent xin lỗi, không văng stacktrace | ADR-004. Đã đo baseline ở D3, xem JOURNAL. **Không được cắt** |
 | T-011 | **HITL duyệt hoàn tiền** | D7–D8 | P0 | Hoàn > ngưỡng → `interrupt()`; CSKH duyệt → graph resume → khách nhận thông báo trên đúng phiên cũ | ADR-003. **Không được cắt** |
 | T-005 | Backend API cho dashboard | D9 | P0 | Endpoint hàng đợi HITL, transcript + tool trace, duyệt/từ chối (từ chối bắt buộc có lý do), thống kê | Phân quyền: `customer` gọi → 403 |
 | T-006 | Frontend Next.js | D9–D11 | P0 | Chat khách (stream, trạng thái chờ duyệt) + Dashboard CSKH (hàng đợi, tool trace, nút duyệt) | Kiểm ở 375px / 768px / 1280px |
-| T-012 | Đo lại, tối ưu, chaos test | D12 | P0 | Chạy T-008 lần cuối đạt cả 3 ngưỡng; test tắt LLM/DB/tool xem fallback | Nếu intent < 90% → chữa theo thứ tự ở `intent-taxonomy.md` mục 4 |
+| T-012 | Đo lại, tối ưu, chaos test | D12 | P0 | Chạy T-008 lần cuối đạt cả 3 ngưỡng; test tắt LLM/DB/tool xem fallback | Nếu intent < 90% → chữa theo `intent-taxonomy.md` mục 4. **Bổ sung eval đa lượt + faithfulness** — xem bug-history 2026-08-26 |
 | T-013 | Đóng gói & demo | D13 | P1 | README có sơ đồ kiến trúc, video demo, kịch bản 5 phút chạy trọn luồng HITL | Ngày này cũng là đệm dự phòng |
 | T-014 | Dashboard thống kê & cảnh báo hạn mức | D10–D11 | P1 | 4 chỉ số + 2 biểu đồ khớp DB; bơm dữ liệu vượt ngưỡng → hiện cảnh báo | F13, F14 — **được phép cắt nếu trễ tiến độ** |
 | T-015 | Thu thập CSAT | D11 | P2 | Cuối phiên hỏi mức 1–5, ghi vào bảng `csat` | F16 — cắt đầu tiên nếu thiếu thời gian |
