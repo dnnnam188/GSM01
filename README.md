@@ -46,7 +46,7 @@ graph TD
 
     subgraph LLM["Nhà cung cấp mô hình"]
         GEM["Gemini Flash-Lite"]
-        FB["TokenRouter · dự phòng"]
+        FB["Fallback tùy chọn · hiện tắt"]
     end
 
     C -->|"stream từng token"| WS
@@ -59,7 +59,7 @@ graph TD
     G --> CK
     T --> LOG
     G --> GEM
-    GEM -.->|"429 / 5xx"| FB
+    GEM -.->|"429 / 5xx khi được bật"| FB
     D -->|"Duyệt / Từ chối"| API
     API -->|"đánh thức graph"| G
     G -->|"đẩy về phiên khách"| WS
@@ -92,7 +92,7 @@ mình được hoàn bao nhiêu, và để khách tự khai là mở đường c
 toán, lộ trình, phí đã thu để tự xác định — và **từ chối đúng** khi không đủ điều kiện.
 → [ADR-009](.ai/context/decisions.md)
 
-Toàn bộ 12 quyết định kiến trúc, kèm các phương án đã loại và lý do:
+Toàn bộ các quyết định kiến trúc, kèm các phương án đã loại và lý do:
 [`.ai/context/decisions.md`](.ai/context/decisions.md)
 
 ---
@@ -102,7 +102,7 @@ Toàn bộ 12 quyết định kiến trúc, kèm các phương án đã loại v
 | Tầng | Lựa chọn |
 |---|---|
 | Điều phối agent | LangGraph · checkpointer Postgres · `interrupt()` cho HITL |
-| Mô hình | Gemini 3.5 Flash-Lite (chính) · TokenRouter (dự phòng, tự chuyển khi 429/5xx) |
+| Mô hình | Gemini 3.5 Flash-Lite (chính) · fallback tùy chọn (hiện tắt) |
 | Truy hồi | pgvector, 768 chiều, cắt đoạn theo tiêu đề |
 | Backend | FastAPI · WebSocket streaming · JWT hai vai trò |
 | Cơ sở dữ liệu | PostgreSQL 17 trên Neon — dữ liệu nghiệp vụ, vector, và checkpoint dùng chung một nơi |

@@ -13,6 +13,40 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-07] – Chốt quota Gemini và tạm tắt provider fallback (T-016)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-016 ✅
+
+### ✅ Đã làm được
+- Giữ `gemini-3.5-flash-lite` cho cả router và answer; giữ `gemini-embedding-001` riêng cho RAG.
+- Chốt `GEMINI_RPM=15` ở client. Ghi rõ quota Google hiện tại là 250.000 TPM / 500 RPD;
+  hai mức này do Google áp dụng theo project, không phải biến Render để tự thay đổi.
+- Thêm `FALLBACK_ENABLED`; Render và `.env.example` đặt `false` để không gọi TokenRouter/OpenRouter
+  đang lỗi. Adapter fallback vẫn giữ nguyên để bật lại sau khi kiểm chứng provider mới.
+- Xác minh bằng key Gemini được cung cấp: model lookup HTTP 200, generate thử HTTP 200, và body
+  structured-output production được Google chấp nhận.
+
+### 📁 File đã thay đổi
+- `src/backend/llm/client.py` — gate mọi request fallback bằng `FALLBACK_ENABLED`.
+- `render.yaml`, `.env.example`, `docs/DEPLOY.md` — quota, model và hướng dẫn deploy.
+- `README.md`, `.ai/context/architecture.md`, `.ai/context/codemap.md`,
+  `.ai/context/project-overview.md`, `.ai/context/decisions.md` — phản ánh fallback hiện tắt.
+- `tests/test_llm_config.py` — khóa hành vi không gọi fallback khi cờ tắt.
+
+### ⏳ Đang dở
+- Không. Chưa thực hiện deploy trên Render; cần người dùng nhập key mới và bấm deploy.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Provider fallback chưa được chọn lại. Không bật `FALLBACK_ENABLED` cho tới khi có model/key đã kiểm chứng.
+- Key Gemini đã xuất hiện trong chat; cần thu hồi và tạo key mới trước khi dùng production.
+
+### ➡️ Việc tiếp theo
+- Cập nhật `GEMINI_API_KEY` mới trên Render, giữ `FALLBACK_ENABLED=false`, rồi **Manual Deploy → Deploy latest commit**.
+- Kiểm tra `/api/health` và chạy một lượt chat sau deploy.
+
+---
+
 ## [2026-08-27] – D12: Thu thập điểm hài lòng cuối phiên (T-015)
 
 - **Agent / Người thực hiện**: Claude Code

@@ -1,4 +1,4 @@
-"""LLMClient — Gemini là chính, OpenRouter là đường lui (ADR-001, ADR-008).
+"""LLMClient — Gemini là chính, provider dự phòng tùy chọn (ADR-001, ADR-008).
 
 Ba việc lớp này làm mà lời gọi HTTP trần không làm:
 
@@ -7,8 +7,8 @@ Ba việc lớp này làm mà lời gọi HTTP trần không làm:
    ghi lại mốc token đầu tiên và trả về trong `LLMResponse.ttft_ms`.
 
 2. **Chuyển provider khi Gemini hỏng.** 429 (hết hạn mức phút của gói free) và
-   5xx đều tự động rơi sang OpenRouter. Đây đồng thời là hạng mục "fallback khi
-   lỗi" mà đề bài yêu cầu.
+   5xx có thể rơi sang provider dự phòng nếu `FALLBACK_ENABLED=true`. Cờ này
+   cho phép tắt một provider chưa được kiểm chứng mà không phải sửa luồng Gemini.
 
 3. **Đếm token.** Mỗi lời gọi trả về `prompt_tokens`/`completion_tokens` để ghi
    vào bảng `messages` và phục vụ cảnh báo hạn mức (F14).
@@ -35,10 +35,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+FALLBACK_ENABLED = (env_str("FALLBACK_ENABLED", "false") or "").lower() in {
+    "1", "true", "yes", "on",
+}
 # Provider dự phòng cấu hình được hoàn toàn qua .env, miễn là nó theo chuẩn
 # OpenAI (`POST {base}/chat/completions`). OpenRouter, AgentRouter, hay bất kỳ
-# gateway nào cùng chuẩn đều dùng được mà KHÔNG phải sửa code — đổi provider chỉ
-# là đổi ba biến môi trường.
+# gateway nào cùng chuẩn đều dùng được mà KHÔNG phải sửa code — bật cờ rồi đổi
+# các biến môi trường tương ứng. Khi cờ tắt, không request nào được gửi tới đây.
 FALLBACK_BASE_URL = env_str("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 FALLBACK_MODEL = env_str("FALLBACK_MODEL", "google/gemini-2.5-flash-lite")
 FALLBACK_PROVIDER_NAME = env_str("FALLBACK_PROVIDER_NAME", "openrouter")
@@ -63,7 +66,7 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 # một vòng chẩn đoán vì nhầm 400 với dấu hiệu hết hạn mức, xem bug-history 2026-08-26.
 QUOTA_STATUS = {429}
 
-# Số lần thử Gemini trên đường stream tới người dùng trước khi rơi sang OpenRouter.
+# Số lần thử Gemini trên đường stream tới người dùng trước khi rơi sang fallback.
 # Cố tình để thấp: mỗi lần thử lại là một khoản trừ thẳng vào ngân sách 3 giây.
 WS_STREAM_MAX_ATTEMPTS = 2
 
@@ -250,6 +253,10 @@ class LLMClient:
     # -- Provider dự phòng, chuẩn OpenAI (đường lui) -----------------------
     def _fallback_call(self, prompt: str, system: str | None, max_tokens: int,
                        json_schema: dict | None = None) -> tuple[str, dict]:
+        if not FALLBACK_ENABLED:
+            raise LLMError(
+                "Gemini hỏng; provider dự phòng đang tắt "
+                "(FALLBACK_ENABLED=false)")
         if not self.fallback_key:
             raise LLMError(
                 "Gemini hỏng và không có khoá provider dự phòng "
@@ -278,7 +285,7 @@ class LLMClient:
     # -- API công khai ------------------------------------------------------
     def generate(self, prompt: str, *, system: str | None = None, model: str | None = None,
                  json_schema: dict | None = None, max_tokens: int = 1024) -> LLMResponse:
-        """Gọi model, tự thử lại và tự rơi sang OpenRouter khi cần."""
+        """Gọi model, tự thử lại và rơi sang fallback nếu được bật."""
         model = model or self.answer_model
         body = self._gemini_body(prompt, system, json_schema, max_tokens)
         started = time.perf_counter()
@@ -321,7 +328,10 @@ class LLMClient:
                 fell_back=True, attempts=self.max_attempts + 1,
             )
         except Exception as exc:
-            raise LLMError(f"Cả Gemini lẫn OpenRouter đều hỏng. Lỗi cuối: {last_error} | {exc}") from exc
+            fallback_state = "đang tắt" if not FALLBACK_ENABLED else "không phản hồi"
+            raise LLMError(
+                f"Gemini lỗi và đường fallback {fallback_state}. "
+                f"Lỗi cuối: {last_error} | {exc}") from exc
 
     def stream_text(self, prompt: str, *, system: str | None = None,
                     model: str | None = None, max_tokens: int = 1024) -> Iterator[str]:
@@ -381,6 +391,10 @@ class LLMClient:
 
     async def _astream_fallback(self, prompt: str, system: str | None, max_tokens: int,
                                   started: float, emitted: list[bool]):
+        if not FALLBACK_ENABLED:
+            raise LLMError(
+                "Gemini hỏng; provider dự phòng đang tắt "
+                "(FALLBACK_ENABLED=false)")
         if not self.fallback_key:
             raise LLMError(
                 "Gemini hỏng và không có khoá provider dự phòng "
@@ -426,7 +440,7 @@ class LLMClient:
 
     async def astream(self, prompt: str, *, system: str | None = None,
                       model: str | None = None, max_tokens: int = 1024):
-        """Stream bất đồng bộ cho WebSocket, có thử lại và có đường lui OpenRouter.
+        """Stream bất đồng bộ cho WebSocket, có thử lại và có đường lui tùy chọn.
 
         Yield tuple (text_delta, ttft_ms, usage). `ttft_ms` chỉ khác None ở đúng
         mảnh đầu tiên — đó là con số dùng nghiệm thu ngưỡng 3 giây.

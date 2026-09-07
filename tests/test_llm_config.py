@@ -88,6 +88,16 @@ def test_provider_du_phong_cau_hinh_duoc_qua_env(monkeypatch):
         importlib.reload(mod)
 
 
+def test_fallback_tat_thi_khong_goi_provider(monkeypatch):
+    """Provider chưa kiểm chứng không được nhận request khi cờ đang tắt."""
+    from src.backend.llm import client as mod
+
+    monkeypatch.setattr(mod, "FALLBACK_ENABLED", False)
+    client = mod.LLMClient()
+    with pytest.raises(mod.LLMError, match="FALLBACK_ENABLED=false"):
+        client._fallback_call("xin chao", None, 32)
+
+
 def test_cot_provider_khong_bi_khoa_cung_vao_danh_sach():
     """Ghi được tên provider bất kỳ thì mới đổi provider bằng cấu hình được."""
     from src.backend.db.connection import get_connection

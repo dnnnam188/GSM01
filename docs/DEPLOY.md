@@ -20,15 +20,21 @@ Cơ sở dữ liệu đã sẵn sàng — schema và seed đã chạy trên Neon
 1. Push code lên GitHub.
 2. Vào [dashboard.render.com](https://dashboard.render.com) → **New → Blueprint** → trỏ vào repo.
    Render đọc `render.yaml` ở thư mục gốc.
-3. Điền 5 biến môi trường được đánh dấu `sync: false`:
+3. Điền các biến môi trường bắt buộc được đánh dấu `sync: false`:
 
-   | Biến | Lấy ở đâu |
-   |---|---|
-   | `DATABASE_URL` | Neon → Connection string (giữ nguyên `?sslmode=require`) |
-   | `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
-   | `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
-   | `JWT_SECRET` | Sinh **mới**: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
-   | `CORS_ORIGINS` | `https://<tên-app>.vercel.app` — điền sau khi deploy frontend |
+   | Biến | Bắt buộc | Lấy ở đâu |
+   |---|---|---|
+   | `DATABASE_URL` | Có | Neon → Connection string (giữ nguyên `?sslmode=require`) |
+   | `GEMINI_API_KEY` | Có | https://aistudio.google.com/apikey |
+   | `JWT_SECRET` | Có | Sinh **mới**: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+   | `CORS_ORIGINS` | Có | `https://<tên-app>.vercel.app` — điền sau khi deploy frontend |
+   | `OPENROUTER_API_KEY` | Không | Để trống khi `FALLBACK_ENABLED=false` |
+   | `FALLBACK_API_KEY` | Không | Để trống khi `FALLBACK_ENABLED=false` |
+
+   Giữ các giá trị sau trong Render: `LLM_ROUTER_MODEL` và `LLM_ANSWER_MODEL` là
+   `gemini-3.5-flash-lite`, `LLM_EMBEDDING_MODEL` là `gemini-embedding-001`,
+   `GEMINI_RPM=15`, và `FALLBACK_ENABLED=false`. Quota 250.000 TPM / 500 RPD
+   do Google áp dụng theo project, không nhập thành biến để tự thay đổi quota.
 
    ⚠️ **Đừng dùng lại `JWT_SECRET` của máy cá nhân.** Ứng dụng sẽ từ chối khởi động nếu
    `ENVIRONMENT=production` mà secret vẫn là giá trị mẫu trong `.env.example`.
@@ -77,7 +83,7 @@ vốn đã đúng, nên production cứ dùng `startCommand` trong `render.yaml`
 | Vấn đề | Xử lý |
 |---|---|
 | **Render free tier ngủ sau ~15 phút** không có request. Lần gọi đầu mất 30–60 giây để dậy. | Mở trang trước buổi demo 5 phút, hoặc ping `/api/health` trước khi trình bày. Đây là nguyên nhân số một làm hỏng demo. |
-| Gemini hết hạn mức gói free | Hệ thống tự rơi sang OpenRouter (ADR-001). Đảm bảo `OPENROUTER_API_KEY` có trên Render, nếu không agent sẽ chỉ xin lỗi. |
+| Gemini hết hạn mức gói free | Client tự giãn nhịp ở 15 RPM. Hiện `FALLBACK_ENABLED=false`, nên khi Gemini hết quota hệ thống trả lời suy giảm an toàn; chỉ bật fallback sau khi đã kiểm chứng provider mới. |
 | WebSocket không kết nối được | Kiểm tra dùng `wss://` (không phải `ws://`) và `CORS_ORIGINS` khớp đúng domain Vercel. |
 | Neon ngắt kết nối nhàn rỗi | Kết nối được mở theo từng request rồi đóng, nên không giữ kết nối chết. |
 | `TTFT > 3s` sau khi deploy | Kiểm `LLM_ANSWER_MODEL` phải là `gemini-3.5-flash-lite` (ADR-010). Đọc `model_name` trong bảng `messages` để biết bản deploy đang dùng model nào. |

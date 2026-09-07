@@ -18,7 +18,7 @@
 - **Backend**: Python 3.11+ · FastAPI · WebSocket streaming — deploy trên Render
 - **Điều phối agent**: LangGraph (state graph, checkpointer, `interrupt()` cho HITL)
 - **Cơ sở dữ liệu**: PostgreSQL + `pgvector` (Neon/Supabase) — **một DB duy nhất**, xem ADR-002
-- **LLM**: Gemini Flash làm chính, OpenRouter làm dự phòng — xem ADR-001
+- **LLM**: Gemini Flash làm chính; provider fallback giữ dạng tùy chọn và đang tắt — xem ADR-001, ADR-013
 - **Xác thực**: JWT, hai vai trò `customer` / `agent`
 - **Môi trường**: Windows + `uv` cho Python, `npm` cho Node — xem `.ai/rules/environment.md`
 

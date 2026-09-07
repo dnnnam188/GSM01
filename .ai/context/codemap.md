@@ -45,7 +45,7 @@
 | **Case khó cho demo/eval** | `src/backend/db/seed.py` → `CASE_RIDES` | 11 mã chuyến cố định, xem `docs/DATA-MODEL.md` mục 6 |
 | **Hợp đồng 8 tool** | `src/backend/tools/contracts.py` → `TOOL_REGISTRY` | Sửa contract phải chạy lại `pytest` |
 | **Prompt phân loại intent** | `src/backend/agent/router.py` → `SYSTEM_PROMPT` | Sửa xong **bắt buộc** chạy lại `eval.run_eval --only intent` |
-| Gọi LLM + fallback provider | `src/backend/llm/client.py` → `LLMClient.generate()` | Gemini 429/5xx → tự rơi sang OpenRouter |
+| Gọi LLM + fallback provider | `src/backend/llm/client.py` → `LLMClient.generate()` | Gemini 429/5xx → rơi sang fallback chỉ khi `FALLBACK_ENABLED=true`; hiện đang tắt |
 | Đo TTFT | `src/backend/llm/client.py` → `_gemini_stream()` | Chỉ đo được khi stream, đừng đổi sang gọi non-stream |
 | Nhúng vector | `src/backend/llm/client.py` → `LLMClient.embed()` | **Bắt buộc** `outputDimensionality=768` |
 | Cắt đoạn kho tri thức | `src/backend/rag/indexer.py` → `chunk_file()` | Cắt theo tiêu đề `##`, không cắt theo độ dài |
@@ -84,7 +84,7 @@ src/backend/
 │   ├── nodes/               # rag_node, tool_node, hitl_node, answer_node
 │   └── memory.py            # Bộ nhớ 3 tầng
 ├── tools/                   # book_ride, cancel_ride, request_refund, create_ticket...
-├── llm/client.py            # LLMClient: Gemini → OpenRouter fallback (ADR-001)
+├── llm/client.py            # LLMClient: Gemini → fallback tùy chọn (ADR-001, ADR-013)
 ├── pii/tokenizer.py         # Token hoá PII trước khi vào context (ADR-004)
 ├── db/                      # models, migrations, seed
 └── config/business_config.py # Đọc ngưỡng nghiệp vụ từ DB (ADR-006)

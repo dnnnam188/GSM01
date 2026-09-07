@@ -12,6 +12,28 @@
 
 ---
 
+## ADR-013 — Tạm tắt provider fallback cho tới khi kiểm chứng lại
+
+- **Ngày**: 2026-09-07
+- **Trạng thái**: `Đang áp dụng`
+- **Bối cảnh**: Các provider fallback đang cấu hình trả lỗi hoặc không ổn định. Nếu giữ cơ chế
+  tự rơi sang chúng, lỗi của Gemini sẽ bị nối tiếp bằng một lỗi provider khác và làm khó chẩn đoán.
+  Gemini `gemini-3.5-flash-lite` vẫn là provider chính; quota đã chốt ở 15 RPM / 250.000 TPM /
+  500 RPD theo project Google.
+- **Quyết định**: Đặt `FALLBACK_ENABLED=false` trên Render và trong mẫu môi trường. Giữ nguyên
+  adapter OpenAI-compatible để bật lại bằng cấu hình sau khi có provider/model/key đã kiểm chứng.
+- **Lý do**: Không gửi dữ liệu hội thoại sang provider chưa đạt kiểm tra; lỗi Gemini phải đi qua
+  nhánh trả lời suy giảm an toàn thay vì gọi tiếp một endpoint đang lỗi.
+- **Phương án đã loại**:
+  - Tiếp tục giữ TokenRouter/OpenRouter làm đường lui mặc định — loại vì cả hai chưa có kết quả
+    ổn định ở thời điểm deploy này.
+  - Xóa hẳn mã fallback — loại vì sau này chỉ cần bật cờ và đổi biến môi trường là có thể dùng lại.
+- **Hệ quả**: Khi Gemini hết quota hoặc lỗi, người dùng nhận thông báo suy giảm an toàn cho tới khi
+  bật một provider fallback đã kiểm chứng. `GEMINI_RPM=15` được client tự giãn nhịp; TPM/RPD do
+  Google áp dụng, không phải quota có thể chỉnh bằng Render env.
+
+---
+
 ## ADR-012 — Tự giãn nhịp gọi Gemini phía client (15 lần/phút, theo từng model)
 
 - **Ngày**: 2026-08-26

@@ -25,9 +25,14 @@ services:
         value: "768"
       - key: GEMINI_RPM
         value: "15"
+      # Quota Google đang chốt: 15 RPM / 250.000 TPM / 500 RPD.
+      # GEMINI_RPM là giới hạn client tự giãn nhịp; TPM/RPD do Google áp dụng theo project.
       - key: JWT_EXPIRE_MINUTES
         value: "720"
-      # Provider dự phòng theo chuẩn OpenAI — đổi provider chỉ cần đổi 4 biến này
+      # Provider dự phòng theo chuẩn OpenAI — tạm tắt vì các provider hiện tại chưa ổn định.
+      # Khi có provider mới đã kiểm chứng: bật FALLBACK_ENABLED rồi đổi các biến bên dưới.
+      - key: FALLBACK_ENABLED
+        value: "false"
       - key: FALLBACK_BASE_URL
         value: https://api.tokenrouter.com/v1
       - key: FALLBACK_MODEL
@@ -38,12 +43,12 @@ services:
         value: '{"reasoning_effort":"low"}'
       - key: FALLBACK_MIN_MAX_TOKENS
         value: "800"
-      # Bốn biến dưới đây phải nhập tay trong dashboard Render:
+      # Các biến sync:false phải nhập tay trong dashboard Render:
       #   DATABASE_URL      — connection string của Neon (có ?sslmode=require)
       #   GEMINI_API_KEY
-      #   OPENROUTER_API_KEY
       #   JWT_SECRET        — chuỗi ngẫu nhiên MỚI, không dùng lại của máy cá nhân
       #   CORS_ORIGINS      — https://<tên-app>.vercel.app
+      #   OPENROUTER_API_KEY / FALLBACK_API_KEY — để trống khi FALLBACK_ENABLED=false
       - key: DATABASE_URL
         sync: false
       - key: GEMINI_API_KEY

@@ -62,6 +62,7 @@
 
 | ID | Task | Ngày xong | Ghi chú / Link JOURNAL |
 |---|---|---|---|
+| T-016 | Chốt quota Gemini và tạm tắt provider fallback | 2026-09-07 | JOURNAL `[2026-09-07]` — Flash Lite router/answer, `GEMINI_RPM=15`, fallback gated bằng `FALLBACK_ENABLED=false`; test 92 pass / 1 skip |
 | T-006 | Frontend Next.js (chat khách + dashboard CSKH) | 2026-08-27 | **Người dùng tự xem và nghiệm thu**, không phải qua kiểm trực quan của agent — "frontend cơ bản vậy là được, đơn giản dễ hiểu". `npm run build` sạch, đã chạy thật trên Vercel |
 | T-015 | Thu thập CSAT cuối phiên (F16) | 2026-08-27 | JOURNAL `[2026-08-27] D12` — hỏi 1–5 sau 2 lượt trả lời; 13 test, trọng tâm là **không chấm được lên phiên của người khác**; chạy thật qua WebSocket → dashboard nhích 4,25 → 4,4 |
 | T-014 | Dashboard thống kê (F13) & cảnh báo hạn mức (F14) | 2026-08-26 | JOURNAL `[2026-08-26] D11` — 4 chỉ số + 2 biểu đồ, **10 test đối soát lại từng số bằng truy vấn độc lập**; bơm vượt ngưỡng qua HTTP: OK→DANGER→OK; mốc ngày sửa về giờ VN |

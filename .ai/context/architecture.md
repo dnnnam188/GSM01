@@ -34,7 +34,7 @@ graph TD
 
     subgraph LLM["LLM Providers"]
         GEM["Gemini Flash (chính)"]
-        ORT["OpenRouter (dự phòng)"]
+        ORT["Fallback tùy chọn (hiện tắt)"]
     end
 
     C -->|"token stream"| WS
@@ -48,7 +48,7 @@ graph TD
     G --> CKPT
     T --> LOG
     G --> GEM
-    GEM -.->|"429 / 5xx"| ORT
+    GEM -.->|"429 / 5xx khi được bật"| ORT
     D -->|"Duyệt / Từ chối"| API
     API -->|"resume graph"| G
     G -->|"đẩy kết quả về phiên khách"| WS
@@ -124,4 +124,4 @@ Mục tiêu kép: giữ ngữ cảnh qua lượt thứ 12+, đồng thời chặ
 | Frontend Next.js | Vercel | Gói free |
 | Backend FastAPI | Render | Gói free ngủ sau ~15 phút không dùng → cần cảnh báo trước khi demo |
 | PostgreSQL + pgvector | Neon hoặc Supabase | Một DB duy nhất (ADR-002) |
-| LLM | Gemini Flash → OpenRouter | Chuyển provider tự động (ADR-001) |
+| LLM | Gemini Flash → fallback tùy chọn | Fallback hiện tắt; chỉ bật sau khi kiểm chứng provider (ADR-001, ADR-013) |
