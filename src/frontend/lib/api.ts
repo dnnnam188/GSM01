@@ -103,6 +103,15 @@ export async function login(email: string, password: string): Promise<Session> {
   };
 }
 
+export async function createWsTicket(token: string): Promise<{ ticket: string; expiresIn: number }> {
+  const data = await request<{ ticket: string; expires_in: number }>(
+    "/api/auth/ws-ticket",
+    { method: "POST" },
+    token,
+  );
+  return { ticket: data.ticket, expiresIn: data.expires_in };
+}
+
 export const fetchDashboard = (token: string) =>
   request<DashboardSummary>("/api/dashboard/summary", {}, token);
 

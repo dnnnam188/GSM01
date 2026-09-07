@@ -46,7 +46,9 @@
 ## ⏳ Đang Dở
 > Agent mới vào phiên: đọc mục này trước tiên.
 
-*Trống.*
+| ID | Task | Agent | Phạm vi hiện tại |
+|---|---|---|---|
+| T-017 | Hardening free-tier production trên nhánh `doannam` | Codex | ✅ Code/test hardening xong; ⏳ staging deploy, migration và e2e/HITL với key hợp lệ còn chờ |
 
 ---
 

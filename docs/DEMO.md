@@ -6,11 +6,14 @@
 
 ---
 
+> Chỉ chạy kịch bản này trên staging/demo. Production không dùng tài khoản
+> demo và không chạy `scripts.demo_reset`.
+
 ## Chuẩn bị (làm trước 10 phút, KHÔNG làm khi đang trình bày)
 
 ```bash
 # 1. Đưa dữ liệu về trạng thái demo được — BẮT BUỘC, xem mục "Vì sao" bên dưới
-.venv/Scripts/python.exe -m scripts.demo_reset
+$env:ALLOW_DEMO_RESET="true"; $env:ENVIRONMENT="staging"; .venv/Scripts/python.exe -m scripts.demo_reset
 
 # 2. Đánh thức Render (gói free ngủ sau ~15 phút, lần gọi đầu mất 30–60 giây)
 curl https://gsm01-api.onrender.com/api/health

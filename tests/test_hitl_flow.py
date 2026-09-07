@@ -24,7 +24,7 @@ import websockets
 
 BASE = os.getenv("GSM_BASE", "http://127.0.0.1:8000").rstrip("/")
 WS_BASE = os.getenv("GSM_WS", BASE.replace("https://", "wss://").replace("http://", "ws://"))
-PASSWORD = os.getenv("GSM_DEMO_PASSWORD", "Demo@123")
+PASSWORD = os.getenv("GSM_DEMO_PASSWORD", "")
 
 results: list[tuple[bool, str]] = []
 
@@ -48,6 +48,8 @@ async def _drain_until_done(ws) -> tuple[str, dict]:
 
 
 async def main() -> int:
+    if not PASSWORD:
+        raise SystemExit("Đặt GSM_DEMO_PASSWORD khi chạy HITL trên staging; không dùng mật khẩu mặc định.")
     print("=" * 74)
     print("  LUỒNG HUMAN-IN-THE-LOOP (T-011)".center(74))
     print("=" * 74)
@@ -66,14 +68,21 @@ async def main() -> int:
         r = await http.get(f"{BASE}/api/hitl/queue", headers=agent_headers)
         check(r.status_code == 200, "CSKH gọi hàng đợi → 200")
         before = {item["refund_code"] for item in r.json()["pending"]}
+        r = await http.post(
+            f"{BASE}/api/auth/ws-ticket",
+            headers={"Authorization": f"Bearer {customer['access_token']}"},
+        )
+        check(r.status_code == 200, "Cấp ticket WebSocket dùng một lần")
+        ws_ticket = r.json()["ticket"]
 
     thread_id = f"hitl-{uuid.uuid4().hex[:8]}"
-    url = f"{WS_BASE}/ws/chat?token={customer['access_token']}&thread_id={thread_id}"
+    url = f"{WS_BASE}/ws/chat?thread_id={thread_id}"
 
     from src.backend.db.connection import get_connection
 
     print("\n2. Khách yêu cầu hoàn tiền vượt ngưỡng → graph phải DỪNG")
     async with websockets.connect(url, max_size=2**22) as ws:
+        await ws.send(json.dumps({"type": "auth", "ticket": ws_ticket}))
         await ws.recv()
         await ws.send(json.dumps({
             "message": "Chuyến XSM-DOUBLE-02 của tôi bị trừ tiền hai lần, hoàn lại tiền cho tôi"}))

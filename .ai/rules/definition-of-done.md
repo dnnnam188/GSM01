@@ -69,7 +69,7 @@
 | Vùng | Lệnh bắt buộc | Trạng thái |
 |---|---|---|
 | Backend Python | `.venv/Scripts/python.exe -m ruff check src/ tests/` → `.venv/Scripts/python.exe -m pytest -q` | ✅ Chạy được |
-| Schema DB | `.venv/Scripts/python.exe -m src.backend.db.apply_schema` (chạy lại được nhiều lần) | ✅ Chạy được |
+| Schema DB | `.venv/Scripts/python.exe -m src.backend.db.migrate` (ghi nhận migration; `apply_schema` chỉ là wrapper cũ) | ✅ Chạy được |
 | Seed dữ liệu | `.venv/Scripts/python.exe -m src.backend.db.seed` (⚠️ TRUNCATE toàn bộ) | ✅ Chạy được |
 | **Agent / prompt / RAG** | `.venv/Scripts/python.exe -m eval.run_eval` → đọc bảng 5 chỉ số | ⏳ Có từ T-008 |
 | Frontend | `npm run lint` → `npm run build` | ⏳ Có từ T-006 |

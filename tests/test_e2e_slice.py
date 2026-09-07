@@ -24,7 +24,7 @@ import websockets
 #   GSM_BASE=https://<app>.onrender.com GSM_WS=wss://<app>.onrender.com
 BASE = os.getenv("GSM_BASE", "http://127.0.0.1:8000").rstrip("/")
 WS_BASE = os.getenv("GSM_WS", BASE.replace("https://", "wss://").replace("http://", "ws://"))
-PASSWORD = os.getenv("GSM_DEMO_PASSWORD", "Demo@123")
+PASSWORD = os.getenv("GSM_DEMO_PASSWORD", "")
 
 results: list[tuple[bool, str]] = []
 
@@ -36,6 +36,8 @@ def check(ok: bool, label: str, detail: str = "") -> bool:
 
 
 async def main() -> int:
+    if not PASSWORD:
+        raise SystemExit("Đặt GSM_DEMO_PASSWORD khi chạy e2e trên staging; không dùng mật khẩu mặc định.")
     print("=" * 74)
     print("  KIỂM CHỨNG ĐẦU-CUỐI VERTICAL SLICE (T-009)".center(74))
     print("=" * 74)
@@ -75,6 +77,12 @@ async def main() -> int:
                            headers={"Authorization": f"Bearer {agent['access_token']}"})
         check(r.status_code == 200, "CSKH gọi dashboard → 200")
         summary_before = r.json()
+        r = await http.post(
+            f"{BASE}/api/auth/ws-ticket",
+            headers={"Authorization": f"Bearer {customer['access_token']}"},
+        )
+        check(r.status_code == 200, "Cấp ticket WebSocket dùng một lần")
+        ws_ticket = r.json()["ticket"]
 
         r = await http.get(f"{BASE}/api/dashboard/summary")
         check(r.status_code == 401, "Không có token → 401")
@@ -85,7 +93,7 @@ async def main() -> int:
 
     print("\n4. Chat streaming qua WebSocket")
     thread_id = f"e2e-{uuid.uuid4().hex[:8]}"
-    url = f"{WS_BASE}/ws/chat?token={customer['access_token']}&thread_id={thread_id}"
+    url = f"{WS_BASE}/ws/chat?thread_id={thread_id}"
 
     turns = [
         ("Phí hủy chuyến với xe taxi là bao nhiêu tiền?", "fare.inquiry"),
@@ -93,6 +101,7 @@ async def main() -> int:
     ]
     last_done: dict = {}
     async with websockets.connect(url, max_size=2**22) as ws:
+        await ws.send(json.dumps({"type": "auth", "ticket": ws_ticket}))
         ready = json.loads(await ws.recv())
         check(ready["type"] == "ready", "Bắt tay WebSocket", ready.get("thread_id", ""))
 

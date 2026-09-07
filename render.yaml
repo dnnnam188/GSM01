@@ -8,7 +8,7 @@ services:
     region: singapore
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn src.backend.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health
+    healthCheckPath: /api/ready
     envVars:
       - key: PYTHON_VERSION
         value: "3.13.7"
@@ -28,7 +28,23 @@ services:
       # Quota Google đang chốt: 15 RPM / 250.000 TPM / 500 RPD.
       # GEMINI_RPM là giới hạn client tự giãn nhịp; TPM/RPD do Google áp dụng theo project.
       - key: JWT_EXPIRE_MINUTES
-        value: "720"
+        value: "120"
+      - key: LOGIN_RATE_LIMIT
+        value: "10"
+      - key: LOGIN_RATE_WINDOW_SECONDS
+        value: "60"
+      - key: CHAT_RATE_LIMIT
+        value: "5"
+      - key: CHAT_RATE_WINDOW_SECONDS
+        value: "60"
+      - key: WS_TICKET_TTL_SECONDS
+        value: "30"
+      - key: WS_IDLE_TIMEOUT_SECONDS
+        value: "1800"
+      - key: MAX_WS_FRAME_BYTES
+        value: "16384"
+      - key: MAX_MESSAGE_CHARS
+        value: "4000"
       # Provider dự phòng theo chuẩn OpenAI — tạm tắt vì các provider hiện tại chưa ổn định.
       # Khi có provider mới đã kiểm chứng: bật FALLBACK_ENABLED rồi đổi các biến bên dưới.
       - key: FALLBACK_ENABLED

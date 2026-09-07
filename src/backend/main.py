@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
+import time
 import uuid
 
 # PHẢI đặt trước khi uvicorn tạo event loop. Trên Windows, vòng lặp mặc định là
@@ -21,7 +23,7 @@ if sys.platform == "win32":
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
@@ -29,7 +31,9 @@ from pydantic import BaseModel, EmailStr, Field
 from src.backend.agent.graph import ANSWER_SYSTEM, resume_graph
 from src.backend.agent.pipeline import run_turn
 from src.backend.api.hub import hub
+from src.backend.api.limits import SlidingWindowLimiter
 from src.backend.api.security import create_access_token, decode_access_token, verify_password
+from src.backend.api.ws_auth import WebSocketTicketStore
 from src.backend.config.settings import get_settings
 from src.backend.db import repository as repo
 from src.backend.llm.client import LLMClient, LLMError
@@ -38,14 +42,49 @@ from src.backend.pii.tokenizer import get_vault
 
 settings = get_settings()
 app = FastAPI(title="GSM-01 API", version="0.1.0")
+logger = logging.getLogger("gsm01.api")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "Retry-After"],
 )
 bearer = HTTPBearer(auto_error=False)
+_login_limiter = SlidingWindowLimiter(
+    settings.login_rate_limit, settings.login_rate_window_seconds)
+_chat_limiter = SlidingWindowLimiter(
+    settings.chat_rate_limit, settings.chat_rate_window_seconds)
+_ws_tickets = WebSocketTicketStore(settings.ws_ticket_ttl_seconds)
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Ghi request metadata mà không ghi query string hoặc credential."""
+    candidate = request.headers.get("X-Request-ID", "")
+    request_id = (
+        candidate
+        if candidate and len(candidate) <= 80
+        and all(char.isalnum() or char in "-_" for char in candidate)
+        else str(uuid.uuid4())
+    )
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request_failed method=%s path=%s request_id=%s",
+            request.method, request.url.path, request_id,
+        )
+        raise
+    duration_ms = round((time.perf_counter() - started) * 1000)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_complete method=%s path=%s status=%s duration_ms=%s request_id=%s",
+        request.method, request.url.path, response.status_code, duration_ms, request_id,
+    )
+    return response
 
 # Một client dùng chung cho cả tiến trình: nó giữ connection pool của httpx,
 # tạo mới mỗi request sẽ đội thêm hàng trăm ms bắt tay TLS vào ngân sách 3 giây.
@@ -63,8 +102,8 @@ def get_llm_client() -> LLMClient:
 # Mô hình dữ liệu
 # ---------------------------------------------------------------------------
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=1)
+    email: EmailStr = Field(max_length=320)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class HitlDecision(BaseModel):
@@ -123,11 +162,33 @@ class CsatRequest(BaseModel):
 # ---------------------------------------------------------------------------
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
+    """Liveness: process còn chạy, không phụ thuộc database/LLM."""
     return {"status": "ok", "environment": settings.environment}
 
 
+@app.get("/api/ready")
+async def ready() -> dict[str, Any]:
+    """Readiness: chỉ báo xanh khi database có thể nhận query."""
+    try:
+        await asyncio.to_thread(repo.check_database)
+    except Exception as exc:  # noqa: BLE001 - không lộ chi tiết dependency ra ngoài
+        logger.warning("readiness_failed error_type=%s", type(exc).__name__)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "Dịch vụ chưa sẵn sàng") from None
+    return {"status": "ready", "environment": settings.environment}
+
+
 @app.post("/api/auth/login", response_model=LoginResponse)
-async def login(body: LoginRequest) -> LoginResponse:
+async def login(body: LoginRequest, request: Request) -> LoginResponse:
+    host = request.client.host if request.client else "unknown"
+    rate_key = f"{host}:{body.email.lower()}"
+    if not _login_limiter.allow(rate_key):
+        retry_after = _login_limiter.retry_after(rate_key)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau.",
+            headers={"Retry-After": str(retry_after)},
+        )
     user = await asyncio.to_thread(repo.get_user_by_email, body.email)
     # Cùng một thông báo cho cả hai trường hợp, để không lộ email nào có tồn tại
     if not user or not verify_password(body.password, user["password_hash"]):
@@ -138,6 +199,15 @@ async def login(body: LoginRequest) -> LoginResponse:
         access_token=create_access_token(user["id"], user["email"], user["role"]),
         user_id=user["id"], email=user["email"], role=user["role"], full_name=user["full_name"],
     )
+
+
+@app.post("/api/auth/ws-ticket")
+async def create_ws_ticket(
+    user: Annotated[dict[str, Any], Depends(require_customer)],
+) -> dict[str, Any]:
+    """Cấp ticket WebSocket dùng một lần thay cho đưa JWT dài hạn vào URL."""
+    ticket, expires_in = _ws_tickets.issue(user)
+    return {"ticket": ticket, "expires_in": expires_in}
 
 
 @app.get("/api/me")
@@ -280,26 +350,43 @@ async def hitl_decide(
 
 
 @app.websocket("/ws/chat")
-async def ws_chat(websocket: WebSocket, token: str = "", thread_id: str = "") -> None:
+async def ws_chat(websocket: WebSocket, thread_id: str = "") -> None:
     """Chat streaming.
 
-    Token đi qua query string chứ không qua header: WebSocket API của trình duyệt
-    không cho đặt header tuỳ ý. Đây là hạn chế của nền tảng, không phải lựa chọn.
+    Browser gửi one-time ticket trong frame đầu tiên sau khi mở kết nối.
+    Access token dài hạn không xuất hiện trong URL WebSocket.
     """
+    origin = websocket.headers.get("origin")
+    if origin and origin not in settings.cors_origins:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "value": "Origin không được phép"})
+        await websocket.close(code=4403)
+        return
+
     await websocket.accept()
+    auth_ticket = ""
     try:
-        payload = decode_access_token(token)
-    except jwt.PyJWTError:
-        await websocket.send_json({"type": "error", "value": "Token không hợp lệ hoặc đã hết hạn"})
+        auth_raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+        if len(auth_raw.encode("utf-8")) <= settings.max_ws_frame_bytes:
+            auth_data = json.loads(auth_raw)
+            if isinstance(auth_data, dict):
+                candidate = auth_data.get("ticket", "")
+                auth_ticket = candidate if isinstance(candidate, str) else ""
+    except (TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
+        auth_ticket = ""
+    payload = _ws_tickets.consume(auth_ticket)
+    if payload is None:
+        await websocket.send_json({"type": "error", "value": "Ticket không hợp lệ hoặc đã hết hạn"})
         await websocket.close(code=4401)
         return
 
-    if payload["role"] != "customer":
+    if payload.get("role") != "customer" or not payload.get("id"):
         await websocket.send_json({"type": "error", "value": "Chỉ tài khoản khách hàng dùng được khung chat"})
         await websocket.close(code=4403)
         return
 
-    customer_id = payload["sub"]
+    customer_id = str(payload["id"])
+    thread_id = thread_id if len(thread_id) <= 128 else ""
     thread_id = thread_id or f"th-{uuid.uuid4()}"
     # `thread_id` của WebSocket không phải conversation_id; đăng ký vào hub sau
     # lượt đầu tiên, khi đã biết conversation_id thật.
@@ -308,12 +395,52 @@ async def ws_chat(websocket: WebSocket, token: str = "", thread_id: str = "") ->
 
     try:
         while True:
-            raw = await websocket.receive_text()
             try:
-                message = json.loads(raw).get("message", "").strip()
+                raw = await asyncio.wait_for(
+                    websocket.receive_text(), timeout=settings.ws_idle_timeout_seconds)
+            except TimeoutError:
+                await websocket.send_json({
+                    "type": "error",
+                    "value": "Phiên chat đã tạm đóng vì không hoạt động. Anh/chị mở lại giúp em ạ.",
+                })
+                await websocket.close(code=1000)
+                return
+
+            if len(raw.encode("utf-8")) > settings.max_ws_frame_bytes:
+                await websocket.send_json({
+                    "type": "error",
+                    "value": "Tin nhắn quá dài. Anh/chị rút gọn nội dung rồi thử lại giúp em ạ.",
+                })
+                await websocket.send_json({"type": "done", "intent": None, "degraded": True})
+                continue
+            try:
+                decoded = json.loads(raw)
+                message = decoded.get("message", "") if isinstance(decoded, dict) else ""
             except json.JSONDecodeError:
-                message = raw.strip()
+                message = raw
+            if not isinstance(message, str):
+                message = ""
+            message = message.strip()
             if not message:
+                continue
+            if len(message) > settings.max_message_chars:
+                await websocket.send_json({
+                    "type": "error",
+                    "value": "Tin nhắn quá dài. Anh/chị rút gọn nội dung rồi thử lại giúp em ạ.",
+                })
+                await websocket.send_json({"type": "done", "intent": None, "degraded": True})
+                continue
+            if not _chat_limiter.allow(customer_id):
+                retry_after = _chat_limiter.retry_after(customer_id)
+                await websocket.send_json({
+                    "type": "error",
+                    "value": "Anh/chị gửi hơi nhanh. Vui lòng thử lại sau ít giây ạ.",
+                    "retry_after_seconds": retry_after,
+                })
+                await websocket.send_json({
+                    "type": "done", "intent": None, "degraded": True,
+                    "retry_after_seconds": retry_after,
+                })
                 continue
             if conversation_id is None:
                 conversation_id = await asyncio.to_thread(
@@ -322,13 +449,13 @@ async def ws_chat(websocket: WebSocket, token: str = "", thread_id: str = "") ->
             try:
                 async for event in run_turn(customer_id, thread_id, message, get_llm_client()):
                     await websocket.send_json(event)
-            except Exception as exc:  # noqa: BLE001 — không được để một lượt lỗi làm sập kết nối
+            except Exception:  # noqa: BLE001 — không được để một lượt lỗi làm sập kết nối
                 await websocket.send_json({
                     "type": "error",
                     "value": "Hệ thống gặp sự cố khi xử lý yêu cầu. Anh/chị thử lại giúp em ạ.",
                 })
                 await websocket.send_json({"type": "done", "intent": None, "degraded": True})
-                print(f"[ws_chat] lỗi khi xử lý lượt: {type(exc).__name__}: {exc}")
+                logger.exception("ws_turn_failed conversation_id=%s", conversation_id)
     except WebSocketDisconnect:
         return
     finally:

@@ -15,8 +15,8 @@ xin phê duyệt của con người** khi thao tác vượt hạn mức rủi ro
 
 Chạy lại toàn bộ bảng trên bằng một lệnh: `.venv/Scripts/python.exe -m eval.run_eval`
 
-**Chạy thử**: [gsm-01.vercel.app](https://gsm-01.vercel.app) · `demo.customer@gsm.vn` hoặc
-`agent01@gsm.vn` · mật khẩu `Demo@123`
+**Chạy thử**: chỉ dùng tài khoản được cấp riêng trên môi trường staging. Không đưa tài khoản demo
+hoặc mật khẩu dùng chung lên bản production.
 
 ---
 
@@ -124,8 +124,9 @@ uv venv && uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
 cp .env.example .env
 
 # 3. Dựng cơ sở dữ liệu và nạp tri thức
-.venv/Scripts/python.exe -m src.backend.db.apply_schema
-.venv/Scripts/python.exe -m src.backend.db.seed
+.venv/Scripts/python.exe -m src.backend.db.migrate
+# Chỉ chạy seed trên database staging/demo, không chạy trên production.
+$env:ALLOW_DEMO_SEED="true"; $env:ENVIRONMENT="staging"; .venv/Scripts/python.exe -m src.backend.db.seed
 .venv/Scripts/python.exe -m src.backend.rag.indexer
 
 # 4. Chạy
@@ -144,8 +145,9 @@ cd src/frontend && npm install && npm run dev # giao diện
 ```bash
 .venv/Scripts/python.exe -m pytest -q                    # 69 test
 .venv/Scripts/python.exe -m eval.run_eval                # bảng 6 chỉ số, ~10 phút
-.venv/Scripts/python.exe -m tests.test_e2e_slice         # 28 phép kiểm đầu-cuối
-.venv/Scripts/python.exe -m tests.test_hitl_flow         # 26 phép kiểm luồng duyệt
+# E2E/HITL staging cần GSM_DEMO_PASSWORD được đặt trong terminal, không dùng default.
+.venv/Scripts/python.exe -m tests.test_e2e_slice         # kiểm đầu-cuối
+.venv/Scripts/python.exe -m tests.test_hitl_flow         # kiểm luồng duyệt
 .venv/Scripts/python.exe -m ruff check src/ tests/ eval/
 ```
 

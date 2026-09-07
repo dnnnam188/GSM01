@@ -5,15 +5,17 @@
 
 ## 0. Trước khi bắt đầu
 
-Cơ sở dữ liệu đã sẵn sàng — schema và seed đã chạy trên Neon. Nếu cần dựng lại từ đầu:
+Cơ sở dữ liệu production phải đi qua migration runner. Seed chỉ dành cho database staging/demo:
 
 ```bash
-.venv/Scripts/python.exe -m src.backend.db.apply_schema
-.venv/Scripts/python.exe -m src.backend.db.seed
+.venv/Scripts/python.exe -m src.backend.db.migrate
+# PowerShell: chỉ chạy trên database staging/demo
+$env:ALLOW_DEMO_SEED="true"; $env:ENVIRONMENT="staging"; .venv/Scripts/python.exe -m src.backend.db.seed
 .venv/Scripts/python.exe -m src.backend.rag.indexer
 ```
 
-⚠️ `seed.py` chạy `TRUNCATE` toàn bộ bảng nghiệp vụ. Đừng chạy trên dữ liệu thật.
+⚠️ `seed.py` chạy `TRUNCATE` toàn bộ bảng nghiệp vụ và sẽ bị chặn trên production.
+Không dùng `scripts.demo_reset` trên database thật.
 
 ## 1. Backend lên Render
 
@@ -39,7 +41,8 @@ Cơ sở dữ liệu đã sẵn sàng — schema và seed đã chạy trên Neon
    ⚠️ **Đừng dùng lại `JWT_SECRET` của máy cá nhân.** Ứng dụng sẽ từ chối khởi động nếu
    `ENVIRONMENT=production` mà secret vẫn là giá trị mẫu trong `.env.example`.
 
-4. Kiểm tra: `curl https://<tên-app>.onrender.com/api/health` phải trả `{"status":"ok"}`.
+4. Kiểm tra liveness: `curl https://<tên-app>.onrender.com/api/health` phải trả `{"status":"ok"}`.
+   Render dùng readiness: `curl https://<tên-app>.onrender.com/api/ready` phải trả `{"status":"ready"}`.
 
 ## 2. Frontend lên Vercel
 
@@ -57,14 +60,18 @@ Cơ sở dữ liệu đã sẵn sàng — schema và seed đã chạy trên Neon
 
 ## 3. Kiểm chứng sau deploy
 
+Frontend lấy một WebSocket ticket ngắn hạn qua `POST /api/auth/ws-ticket` rồi gửi
+ticket trong frame đầu tiên. Không đưa access token dài hạn vào URL WebSocket.
+
 Chạy kịch bản đầu-cuối nhắm vào bản đã deploy:
 
 ```bash
-GSM_BASE=https://<app>.onrender.com GSM_WS=wss://<app>.onrender.com \
-  .venv/Scripts/python.exe -m tests.test_e2e_slice
+$env:GSM_BASE="https://<app>.onrender.com"; $env:GSM_WS="wss://<app>.onrender.com";
+$env:GSM_DEMO_PASSWORD="<staging-password>";
+.venv/Scripts/python.exe -m tests.test_e2e_slice
 ```
 
-Phải đạt đủ 28/28 phép kiểm.
+Phải đạt đủ 29/29 phép kiểm (bao gồm cấp và dùng one-time WebSocket ticket).
 
 ## 3b. Chạy ở máy phát triển
 

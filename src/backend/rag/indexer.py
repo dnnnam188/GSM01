@@ -87,7 +87,11 @@ def build_chunks() -> list[Chunk]:
 
 
 def index_knowledge_base(batch_size: int = 20) -> dict[str, int]:
+    if batch_size <= 0:
+        raise ValueError("batch_size phải lớn hơn 0")
     chunks = build_chunks()
+    if not chunks:
+        raise RuntimeError("Kho tri thức không có chunk nào; không được xoá index hiện tại")
     client = LLMClient()
 
     vectors: list[list[float]] = []
@@ -95,7 +99,17 @@ def index_knowledge_base(batch_size: int = 20) -> dict[str, int]:
         batch = chunks[start:start + batch_size]
         vectors.extend(client.embed([c.content for c in batch], task_type="RETRIEVAL_DOCUMENT"))
 
+    if len(vectors) != len(chunks):
+        raise RuntimeError("Số vector không khớp số chunk; giữ nguyên index hiện tại")
+    wrong_dimensions = sorted({len(vector) for vector in vectors if len(vector) != client.embedding_dim})
+    if wrong_dimensions:
+        raise RuntimeError(
+            f"Vector có chiều không đúng: {wrong_dimensions}; cần {client.embedding_dim}"
+        )
+
     with get_connection() as conn, conn.cursor() as cur:
+        # TRUNCATE + INSERT nằm trong cùng transaction của get_connection().
+        # Nếu insert/commit lỗi, psycopg rollback và index cũ vẫn còn nguyên.
         cur.execute("TRUNCATE knowledge_chunks RESTART IDENTITY")
         cur.executemany(
             "INSERT INTO knowledge_chunks (source_file, heading, chunk_index, content, "
@@ -106,6 +120,10 @@ def index_knowledge_base(batch_size: int = 20) -> dict[str, int]:
                 for c, v in zip(chunks, vectors, strict=True)
             ],
         )
+        cur.execute("SELECT count(*) FROM knowledge_chunks")
+        loaded = cur.fetchone()[0]
+        if loaded != len(chunks):
+            raise RuntimeError("Số chunk đã nạp không khớp; rollback index")
     by_file: dict[str, int] = {}
     for c in chunks:
         by_file[c.source_file] = by_file.get(c.source_file, 0) + 1

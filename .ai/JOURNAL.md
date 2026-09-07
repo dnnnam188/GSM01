@@ -13,6 +13,50 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-08] – Hardening free-tier production trên nhánh doannam (T-017)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-017 ⏳
+
+### ✅ Đã làm được
+- Giữ `main` nguyên trạng; mọi thay đổi nằm trên `doannam`.
+- Thêm one-time WebSocket ticket gửi trong frame auth đầu tiên; access token dài hạn không còn nằm trong URL.
+- Thêm login/chat sliding-window limiter, giới hạn frame/message, idle timeout, Origin check và `X-Request-ID` log an toàn.
+- Tách `/api/health` (liveness) và `/api/ready` (database readiness); Render health check chuyển sang `/api/ready`.
+- Thêm migration runner có bảng `schema_migrations`; `apply_schema` giữ vai trò wrapper tương thích.
+- Chặn `seed.py` và `scripts.demo_reset` trên `ENVIRONMENT=production`; bảo vệ JWT/CORS production.
+- Làm RAG indexer kiểm tra chunk/vector/count trong transaction trước khi hoàn tất thay thế index.
+- Xóa tài khoản demo khỏi giao diện production; thêm nút thử kết nối lại và giữ `thread_id` khi reconnect.
+- Thêm GitHub Actions CI cho Ruff, compile, unit/protocol tests, frontend typecheck/build.
+
+### 📊 Kiểm chứng
+- Ruff: pass.
+- Full backend regression: **103 passed, 1 skipped**.
+- Hardening/protocol tests: **25 passed**; vòng cuối riêng protocol/guards/limiter: **11 passed**.
+- Frontend `npm run typecheck`: pass; `npm run build`: pass.
+- Local server bằng `run_dev.py`: `/api/health` và `/api/ready` trả 200; login và cấp ticket WebSocket pass; handshake ticket pass.
+- Chat e2e thật chưa đạt vì `GEMINI_API_KEY` trong `.env` local trả HTTP 401; hệ thống trả degraded response an toàn và ghi lỗi `RETRYABLE`, không lộ stacktrace.
+
+### 📁 File đã thay đổi
+- `src/backend/main.py`, `src/backend/api/limits.py`, `src/backend/api/ws_auth.py` — auth WebSocket, rate limit, readiness, request logging và input guard.
+- `src/backend/db/migrate.py`, `src/backend/db/demo_guard.py`, `src/backend/db/apply_schema.py`, `src/backend/rag/indexer.py` — migration/seed/index safety.
+- `src/frontend/components/Login.tsx`, `src/frontend/components/CustomerChat.tsx`, `src/frontend/lib/api.ts` — bỏ demo login, ticket handshake, reconnect.
+- `.github/workflows/ci.yml`, `.env.example`, `render.yaml`, `docs/API.md`, `docs/DEPLOY.md` — CI và vận hành free-tier.
+
+### ⏳ Đang dở
+- Chưa deploy/kiểm chứng staging branch `doannam` trên Render/Vercel.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Cần nhập **Gemini API key hợp lệ đã được thu hồi/tạo mới** vào môi trường staging/Render; không đưa key vào Git hoặc chat.
+- Cần tạo/kiểm tra database staging, chạy migration và chạy e2e/HITL staging bằng mật khẩu staging riêng.
+- Push lên remote bị GitHub từ chối vì OAuth App hiện tại thiếu scope `workflow` cho `.github/workflows/ci.yml`;
+  commit `dd1328d` đã có ở local, còn `origin/doannam` vẫn đang ở `e6c862d`.
+
+### ➡️ Việc tiếp theo
+- Cấp scope `workflow` cho credential GitHub rồi push `doannam`; sau đó deploy staging riêng, đặt
+  `DATABASE_URL`, `GEMINI_API_KEY`, `JWT_SECRET`, `CORS_ORIGINS`.
+- Chạy migration trên staging, smoke `/api/ready`, e2e 29/29 và HITL; chỉ sau đó mới tạo Pull Request vào `main`.
+
 ## [2026-09-07] – Chốt quota Gemini và tạm tắt provider fallback (T-016)
 
 - **Agent / Người thực hiện**: Codex

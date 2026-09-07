@@ -55,12 +55,14 @@
 | **Một lượt hội thoại** | `src/backend/agent/pipeline.py` → `run_turn()` | T-004 sẽ thay ruột bằng LangGraph, giữ nguyên hợp đồng sự kiện |
 | **Viết lại câu hỏi đa lượt** | `src/backend/agent/router.py` → `standalone_query` | Bỏ đi là RAG trả lời sai số liệu, xem bug-history 2026-08-26 |
 | Endpoint HTTP + WebSocket | `src/backend/main.py` | `/api/auth/login`, `/api/dashboard/summary`, `/ws/chat` |
+| WebSocket ticket + limiter | `src/backend/api/ws_auth.py`, `src/backend/api/limits.py` | Ticket dùng một lần trong frame đầu tiên; limiter trong một worker free-tier |
 | Chặn quyền theo vai trò | `src/backend/main.py` → `require_agent()` | Kiểm ở server, giao diện không phải nơi kiểm |
 | Truy vấn DB tầng hội thoại | `src/backend/db/repository.py` | Đồng bộ; API bọc bằng `asyncio.to_thread` |
 | Giao diện chat + dashboard | `src/frontend/app/page.tsx` | Bản rút gọn, T-006 làm đầy đủ |
 | Sinh idempotency key | `src/backend/tools/contracts.py` → `WriteToolInput.build_idempotency_key()` | Đổi cách sinh = mất tác dụng chống trùng (ADR-005) |
 | Nhãn trường PII | `src/backend/tools/contracts.py` → `pii_field()`, `pii_fields_of()` | Tokenizer ở T-010 đọc nhãn này |
 | Kết nối DB | `src/backend/db/connection.py` → `get_connection()` | Đọc `DATABASE_URL` từ `.env` |
+| Migration database | `src/backend/db/migrate.py`, `src/backend/db/migrations/` | Ghi phiên bản vào `schema_migrations`; seed/reset bị chặn trên production |
 | **Điều phối agent** | `src/backend/agent/graph.py` → `tool_node()` | Ánh xạ intent→tool bằng luật, không để LLM tự chọn |
 | **Điểm dừng HITL** | `src/backend/agent/graph.py` → `interrupt()` trong `tool_node` | Resume chạy LẠI cả node; idempotency chặn trùng (ADR-005) |
 | Đánh thức graph | `src/backend/agent/graph.py` → `resume_graph()` | Khoá là `conversation_id` |

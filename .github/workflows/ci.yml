@@ -1,0 +1,57 @@
+name: GSM-01 CI
+
+on:
+  push:
+    branches: [main, doannam]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql://ci:ci@localhost/gsm01
+      JWT_SECRET: ci-only-secret-that-is-long-enough-for-tests
+      CORS_ORIGINS: http://localhost:3000
+      GEMINI_API_KEY: ci-not-used
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Ruff
+        run: python -m ruff check src/ tests/
+      - name: Compile check
+        run: python -m compileall -q src/
+      - name: Unit tests without external secrets
+        run: python -m pytest -q tests/test_env_parsing.py tests/test_limits.py tests/test_ws_auth.py tests/test_production_guards.py tests/test_ws_protocol.py
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build

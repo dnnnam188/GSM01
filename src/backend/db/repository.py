@@ -13,6 +13,13 @@ import psycopg
 from src.backend.db.connection import get_connection
 
 
+def check_database() -> None:
+    """Query nhẹ cho readiness probe; lỗi được để caller phân loại thành 503."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1")
+        cur.fetchone()
+
+
 def get_user_by_email(email: str) -> dict[str, Any] | None:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(

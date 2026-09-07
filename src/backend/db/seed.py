@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 import bcrypt
 
 from src.backend.db.connection import get_connection
+from src.backend.db.demo_guard import ensure_demo_operation_allowed
 
 RNG = random.Random(42)
 NOW = datetime(2026, 8, 26, 10, 0, 0, tzinfo=UTC)
@@ -126,6 +127,7 @@ CASE_RIDES = [
 
 
 def seed() -> dict[str, int]:
+    ensure_demo_operation_allowed("ALLOW_DEMO_SEED", "nạp dữ liệu demo")
     counts: dict[str, int] = {}
     password_hash = bcrypt.hashpw(DEMO_PASSWORD.encode(), bcrypt.gensalt()).decode()
 

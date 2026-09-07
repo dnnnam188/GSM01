@@ -1,41 +1,50 @@
-# API & Data Specification
+# GSM-01 API
 
-> 📝 *Mẫu tài liệu đặc tả API và lược đồ dữ liệu. Bạn hãy cập nhật các endpoint khi phát triển backend.*
+Base URL local: `http://127.0.0.1:8000`
+Base URL staging/production: giá trị backend trong Render.
 
-## 1. Quy Chuẩn Chung
-- **Base URL**: `https://api.yourdomain.com/v1` (hoặc `http://localhost:8000/api`)
-- **Định dạng dữ liệu**: `application/json`
-- **Mã phản hồi chuẩn (Status Codes)**:
-  - `200 OK`: Thành công.
-  - `201 Created`: Tạo mới tài nguyên thành công.
-  - `400 Bad Request`: Dữ liệu gửi lên không hợp lệ.
-  - `401 Unauthorized`: Chưa đăng nhập hoặc token hết hạn.
-  - `403 Forbidden`: Không có quyền truy cập.
-  - `404 Not Found`: Không tìm thấy tài nguyên.
-  - `500 Internal Server Error`: Lỗi máy chủ.
+## Health
 
-## 2. Cấu Trúc Phản Hồi Chuẩn (Standard Response Format)
+- `GET /api/health`: liveness, không kiểm tra dependency.
+- `GET /api/ready`: readiness, kiểm tra PostgreSQL và trả `503` nếu database chưa sẵn sàng.
 
-```json
-{
-  "success": true,
-  "data": {},
-  "message": "Thao tác thành công",
-  "errors": null
-}
-```
+## Authentication
 
-## 3. Danh Sách Endpoints Mẫu
+- `POST /api/auth/login`: nhận `{ "email": "...", "password": "..." }`, trả access token.
+- `POST /api/auth/ws-ticket`: cần `Authorization: Bearer <access_token>`, chỉ customer được gọi.
+  Trả ticket dùng một lần, sống ngắn hạn.
+- `GET /api/me`: cần Bearer token.
 
-### 3.1. Authentication
-- `POST /auth/register` - Đăng ký tài khoản
-- `POST /auth/login` - Đăng nhập nhận token
-- `POST /auth/refresh` - Làm mới access token
+Access token không được đưa vào URL WebSocket. Luồng chat:
 
-### 3.2. Resources
-- `GET /items` - Lấy danh sách (hỗ trợ phân trang `?page=1&limit=20`)
-- `POST /items` - Tạo mới
-- `GET /items/:id` - Lấy chi tiết
-- `PUT /items/:id` - Cập nhật toàn bộ
-- `PATCH /items/:id` - Cập nhật một phần
-- `DELETE /items/:id` - Xóa
+1. Gọi `POST /api/auth/ws-ticket` bằng Bearer token.
+2. Mở `wss://<backend>/ws/chat`.
+3. Gửi frame đầu tiên: `{ "type": "auth", "ticket": "<one-time-ticket>" }`.
+4. Chờ event `ready`, sau đó gửi `{ "message": "..." }`.
+
+## Customer
+
+- `POST /api/chat/{thread_id}/csat`
+- `GET /api/chat/{thread_id}/csat`
+
+## Agent
+
+- `GET /api/dashboard/summary`
+- `GET /api/dashboard/stats`
+- `GET /api/hitl/queue`
+- `POST /api/hitl/{refund_code}/decide`
+- `GET /api/conversations/{conversation_id}/transcript`
+
+Tất cả endpoint agent cần role `agent`. CSAT cần role `customer`.
+
+## Error contract
+
+- `400`: request không hợp lệ.
+- `401`: thiếu hoặc hết hạn token/ticket.
+- `403`: sai role hoặc Origin không được phép.
+- `409`: thao tác HITL đã được xử lý trước đó.
+- `422`: Pydantic validation.
+- `429`: vượt rate limit; đọc header `Retry-After`.
+- `503`: readiness dependency chưa sẵn sàng.
+
+Mỗi response HTTP có `X-Request-ID` để đối chiếu log mà không cần ghi credential vào log.

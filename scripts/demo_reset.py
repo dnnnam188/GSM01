@@ -16,6 +16,7 @@ Script này KHÔNG xoá dữ liệu nghiệp vụ (chuyến, khách, kho tri th�
 from __future__ import annotations
 
 from src.backend.db.connection import get_connection
+from src.backend.db.demo_guard import ensure_demo_operation_allowed
 
 # Tiền tố thread_id do test, eval, và chính script này sinh ra — an toàn để xoá.
 # `demo-hitl-seed%` phải nằm trong danh sách, nếu không lần chạy thứ hai sẽ vấp
@@ -35,6 +36,7 @@ REQUIRED_CASES = [
 
 
 def main() -> None:
+    ensure_demo_operation_allowed("ALLOW_DEMO_RESET", "reset dữ liệu demo")
     report: list[str] = []
 
     with get_connection() as conn, conn.cursor() as cur:

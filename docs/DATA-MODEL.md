@@ -1,9 +1,11 @@
 # Data Model — GSM-01
 
-- **Nguồn sự thật**: `src/backend/db/schema.sql` · **Seed**: `src/backend/db/seed.py`
+- **Bootstrap schema**: `src/backend/db/schema.sql` · **Migration runner**: `src/backend/db/migrate.py`
+  · **Seed staging**: `src/backend/db/seed.py`
 - **Hạ tầng**: Neon PostgreSQL **17.11** + `pgvector` **0.8.0** (ADR-002)
-- **Áp dụng**: `.venv/Scripts/python -m src.backend.db.apply_schema` (chạy lại được nhiều lần)
-- **Nạp dữ liệu**: `.venv/Scripts/python -m src.backend.db.seed` (xoá sạch rồi nạp lại, kết quả tất định)
+- **Áp dụng**: `.venv/Scripts/python -m src.backend.db.migrate` (ghi nhận vào `schema_migrations`)
+- **Nạp dữ liệu staging**: đặt `ALLOW_DEMO_SEED=true`, `ENVIRONMENT=staging` rồi chạy
+  `.venv/Scripts/python -m src.backend.db.seed` (xoá sạch rồi nạp lại, kết quả tất định)
 
 ---
 
@@ -26,7 +28,8 @@
 | 13 | `knowledge_chunks` | Vector store cho RAG | `vector(768)` — xem mục 5 |
 | 14 | `csat_ratings` | Điểm hài lòng 1–5 | Một phiên một điểm |
 
-> Bảng checkpoint của LangGraph do framework tự tạo ở T-011, không khai báo trong `schema.sql`.
+> Bảng `schema_migrations` và checkpoint của LangGraph do runtime/migration runner quản lý;
+> checkpoint không khai báo trong `schema.sql`.
 
 ---
 

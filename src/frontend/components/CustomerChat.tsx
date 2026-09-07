@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Shell } from "@/components/Shell";
-import { WS_BASE, submitCsat, type Session } from "@/lib/api";
+import { createWsTicket, WS_BASE, submitCsat, type Session } from "@/lib/api";
 import { INTENT_LABEL, ms } from "@/lib/format";
 
 type ToolEvent = { name: string; ok: boolean; replayed: boolean; error: string | null };
@@ -41,14 +41,29 @@ export function CustomerChat({
   const [threadId, setThreadId] = useState("");
   const [rated, setRated] = useState(false);
   const [csatHidden, setCsatHidden] = useState(false);
+  const [connectAttempt, setConnectAttempt] = useState(0);
   const socket = useRef<WebSocket | null>(null);
+  const threadIdRef = useRef("");
   const scroller = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const ws = new WebSocket(
-      `${WS_BASE}/ws/chat?token=${encodeURIComponent(session.accessToken)}`,
-    );
+    const threadQuery = threadIdRef.current
+      ? `?thread_id=${encodeURIComponent(threadIdRef.current)}`
+      : "";
+    const ws = new WebSocket(`${WS_BASE}/ws/chat${threadQuery}`);
     socket.current = ws;
+
+    ws.onopen = async () => {
+      try {
+        const { ticket } = await createWsTicket(session.accessToken);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "auth", ticket }));
+        }
+      } catch {
+        setStatus("Phiên đăng nhập đã hết hạn. Anh/chị đăng nhập lại giúp em ạ.");
+        ws.close();
+      }
+    };
 
     ws.onclose = () => {
       setConnected(false);
@@ -63,6 +78,7 @@ export function CustomerChat({
         setConnected(true);
         setStatus("Sẵn sàng");
         setThreadId(data.thread_id ?? "");
+        threadIdRef.current = data.thread_id ?? "";
         return;
       }
 
@@ -128,7 +144,7 @@ export function CustomerChat({
     };
 
     return () => ws.close();
-  }, [session.accessToken]);
+  }, [session.accessToken, connectAttempt]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -237,6 +253,15 @@ export function CustomerChat({
         <p className="status-line">
           {waiting && <span className="pulse" aria-hidden />}
           {status}
+          {!connected && !waiting && (
+            <button
+              className="btn-text"
+              type="button"
+              onClick={() => setConnectAttempt((attempt) => attempt + 1)}
+            >
+              Thử kết nối lại
+            </button>
+          )}
         </p>
       </div>
     </Shell>
