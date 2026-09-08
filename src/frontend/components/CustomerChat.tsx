@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Shell } from "@/components/Shell";
+import { BrandGlyph, Shell } from "@/components/Shell";
 import { createWsTicket, WS_BASE, submitCsat, type Session } from "@/lib/api";
 import { INTENT_LABEL, ms } from "@/lib/format";
 
@@ -29,12 +29,7 @@ const SUGGESTIONS = [
 function AssistantAvatar() {
   return (
     <span className="assistant-avatar" aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none">
-        <path d="M7.5 19.5v-6A4.5 4.5 0 0 1 12 9h8a4.5 4.5 0 0 1 4.5 4.5v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <circle cx="11" cy="20" r="2" fill="currentColor" />
-        <circle cx="21" cy="20" r="2" fill="currentColor" />
-        <path d="M11 25h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
+      <BrandGlyph />
     </span>
   );
 }
@@ -43,6 +38,14 @@ function SendIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="m3 3 14 7-14 7 2-6.5 7-1-7-1L3 3Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SuggestionArrow() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -190,7 +193,6 @@ export function CustomerChat({
     <Shell session={session} onLogout={onLogout}>
       <div className="page-heading page-heading--chat">
         <div>
-          <p className="page-context">GREENSM CARE / CUSTOMER SUPPORT</p>
           <h1>Xin chào, {session.fullName}</h1>
           <p className="lede">Bạn cần hỗ trợ gì cho hành trình của mình hôm nay?</p>
         </div>
@@ -215,8 +217,8 @@ export function CustomerChat({
           <div className="chat-panel__assistant">
             <AssistantAvatar />
             <span>
-              <strong>Trợ lý GreenSM</strong>
-              <small>Tra cứu chuyến đi · chính sách · hỗ trợ khiếu nại</small>
+              <strong>GreenSM support</strong>
+              <small>Tra cứu chuyến đi · chính sách · khiếu nại</small>
             </span>
           </div>
           <span className="chat-panel__secure">
@@ -229,10 +231,10 @@ export function CustomerChat({
           {turns.length === 0 && !waiting && (
             <div className="welcome-state">
               <div className="welcome-state__mark"><AssistantAvatar /></div>
-              <h2>Bạn cần hỗ trợ gì ạ?</h2>
+              <h2>Bạn cần hỗ trợ gì?</h2>
               <p>
-                Tôi có thể tra cước, tìm chuyến đã đi, hỗ trợ đặt hoặc hủy chuyến,
-                tiếp nhận thất lạc đồ và yêu cầu hoàn tiền.
+                GreenSM có thể tra cước, tìm chuyến đã đi, hỗ trợ đặt hoặc hủy chuyến,
+                tiếp nhận thất lạc đồ và ghi nhận yêu cầu hoàn tiền.
               </p>
               <div className="suggestion-list" aria-label="Gợi ý câu hỏi">
                 {SUGGESTIONS.map((text) => (
@@ -243,7 +245,7 @@ export function CustomerChat({
                     disabled={!connected}
                   >
                     <span>{text}</span>
-                    <span aria-hidden="true">↗</span>
+                    <span aria-hidden="true"><SuggestionArrow /></span>
                   </button>
                 ))}
               </div>
@@ -287,7 +289,7 @@ export function CustomerChat({
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Viết tin nhắn cho GreenSM…"
+              placeholder="Bạn muốn GreenSM hỗ trợ điều gì?"
               aria-label="Tin nhắn gửi trợ lý"
               disabled={!connected || waiting}
             />

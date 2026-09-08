@@ -48,6 +48,7 @@
 
 | ID | Task | Agent | Phạm vi hiện tại |
 |---|---|---|---|
+| T-020 | Redesign UI/UX GreenSM theo góc nhìn người dùng thật | Codex | Chỉ frontend trên `doannam`: dùng nhận diện/asset phù hợp từ nguồn chính thức, giảm cảm giác AI-generated, tối ưu login, chat khách hàng và workspace CSKH; giữ nguyên backend/API |
 
 ---
 

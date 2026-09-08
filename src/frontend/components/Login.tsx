@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Shell } from "@/components/Shell";
+import { BrandLogo, Shell } from "@/components/Shell";
 import { login, type Session } from "@/lib/api";
 
 function ArrowIcon() {
@@ -17,15 +17,6 @@ function ShieldIcon() {
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 3.5 19 6v5.4c0 4.1-2.7 7.6-7 9.1-4.3-1.5-7-5-7-9.1V6l7-2.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
       <path d="m9 12 2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SparkIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="m12 3 1.3 5.7L19 10l-5.7 1.3L12 17l-1.3-5.7L5 10l5.7-1.3L12 3Z" fill="currentColor" />
-      <path d="m19 15 .6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" fill="currentColor" opacity=".7" />
     </svg>
   );
 }
@@ -53,24 +44,29 @@ export function Login({ onSignedIn }: { onSignedIn: (session: Session) => void }
     <Shell narrow>
       <div className="login-page">
         <section className="login-intro" aria-labelledby="login-title">
-          <div className="login-intro__signal">
-            <span className="signal-dot" />
-            <span>GreenSM care workspace</span>
-          </div>
-          <h1 id="login-title">Mỗi hành trình đều xứng đáng được chăm sóc tử tế.</h1>
-          <p>
-            GSM-01 giúp khách hàng nhận hỗ trợ rõ ràng hơn và giúp đội CSKH xử lý đúng việc,
-            đúng người, đúng thời điểm.
-          </p>
-
-          <div className="login-intro__proof" aria-label="Điểm nổi bật của hệ thống">
-            <div className="proof-item">
-              <span className="proof-icon"><SparkIcon /></span>
-              <span><strong>Hỗ trợ tức thì</strong><small>Tra cứu chuyến, cước phí và chính sách trong một luồng chat.</small></span>
-            </div>
-            <div className="proof-item">
-              <span className="proof-icon"><ShieldIcon /></span>
-              <span><strong>Quyết định có kiểm soát</strong><small>Những yêu cầu rủi ro luôn được chuyển tới nhân viên phụ trách.</small></span>
+          <div className="login-visual">
+            <div className="login-visual__content">
+              <div className="login-visual__brand">
+                <BrandLogo />
+                <span className="login-visual__code">GSM-01 / customer care</span>
+              </div>
+              <div className="login-visual__copy">
+                <h1 id="login-title">Chăm sóc từng hành trình, rõ ràng từ bước đầu.</h1>
+                <p>
+                  Không gian hỗ trợ dành cho khách hàng và đội CSKH GreenSM — nơi mỗi quyết định
+                  đều có dữ liệu đứng phía sau.
+                </p>
+                <div className="login-visual__meta" aria-label="Điểm nổi bật của hệ thống">
+                  <span>
+                    <strong>Hỗ trợ đúng việc</strong>
+                    <small>Tra cứu chuyến, cước phí và chính sách trong một luồng.</small>
+                  </span>
+                  <span>
+                    <strong>Quyết định có kiểm soát</strong>
+                    <small>Ca rủi ro luôn được chuyển tới nhân viên phụ trách.</small>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
