@@ -13,6 +13,30 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-08] – Cập nhật README cho free-tier production (T-018)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-018
+
+### ✅ Đã làm được
+- README đã mô tả rõ trạng thái `production-minded pilot`, live links, kiến trúc và ranh giới giữa pilot nhỏ với public scale.
+- Bổ sung bảng free-tier: Render Free một worker, Neon staging/production, Gemini `15 RPM / 250K TPM / 500 RPD`, fallback tắt, cold start và ngưỡng rollout khuyến nghị.
+- Bổ sung checklist trước khi mời người dùng thật: secret, CORS, migration/seed, indexer, demo data và health checks.
+- Sửa ghi chú test từ 69 thành 104 test được thu thập hiện tại.
+
+### 📁 File đã thay đổi
+- `README.md` — tài liệu onboarding, production profile và recruiter-facing overview.
+- `.ai/TASKS.md` — chuyển T-018 sang hoàn thành.
+
+### ⏳ Đang dở
+- Không.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Không. Không thêm secret hoặc credential vào tài liệu.
+
+### ➡️ Việc tiếp theo
+- Không có việc bắt buộc; khi hạn mức/provider thay đổi thì cập nhật lại profile free-tier.
+
 ## [2026-09-08] – Hoàn tất kiểm chứng free-tier production (T-017)
 
 - **Agent / Người thực hiện**: Codex
