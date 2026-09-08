@@ -13,6 +13,39 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-08] – Đưa UI/UX GreenSM về trải nghiệm sản phẩm thật trên doannam (T-020)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-020
+
+### ✅ Đã làm được
+- Dựa trên nhận diện Green SM hiện tại: logo vector theo website chính thức, màu cyan/vàng thương hiệu và ảnh hành trình xe điện thật cho màn đăng nhập.
+- Giảm các dấu hiệu giao diện sinh tự động: bỏ icon robot, giảm pill/card trang trí, chuyển sang hierarchy phục vụ tác vụ và ngôn ngữ hỗ trợ tự nhiên hơn.
+- Tối ưu lại login, customer chat, queue HITL, panel bằng chứng và dashboard thống kê; giữ nguyên API contract, backend và toàn bộ logic nghiệp vụ.
+- Thêm `src/frontend/public/brand/SOURCES.md` để ghi rõ nguồn asset và ghi chú trademark; chỉ sử dụng asset ở frontend.
+
+### 📊 Kiểm chứng
+- `npm run typecheck`: pass.
+- `npm run build`: pass; static route `/` build thành công.
+- Impeccable detector trên các file UI thay đổi: `[]`.
+- Vercel deployment commit `8e77420`: Ready; alias branch `git-doannam` sau khi propagation hiển thị đúng bản mới.
+- Chrome trên alias branch: đã xem bằng mắt login, customer chat, queue HITL, panel bằng chứng và dashboard thống kê; login cả customer và CSKH staging thành công.
+
+### 📁 File đã thay đổi
+- `src/frontend/app/globals.css`, `src/frontend/app/layout.tsx`
+- `src/frontend/components/Shell.tsx`, `Login.tsx`, `CustomerChat.tsx`, `AgentDashboard.tsx`
+- `src/frontend/public/brand/green-sm-story.jpg`, `SOURCES.md`
+- `.ai/TASKS.md`, `.ai/context/codemap.md`
+
+### ⏳ Đang dở
+- Không còn việc chặn trong phạm vi redesign frontend.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- `npm run lint` hiện chưa thể chạy non-interactive vì repo chưa có ESLint dependency/config; `next lint` dừng ở prompt cấu hình. Đây là tình trạng có sẵn của repo, không phát sinh từ thay đổi UI. `typecheck` và `build` vẫn pass.
+
+### ➡️ Việc tiếp theo
+- Người dùng review visual trên alias `https://gsm-01-git-doannam-namdoan180804hcmus-7073s-projects.vercel.app/`; chỉ merge vào `main` sau khi duyệt giao diện.
+
 ## [2026-09-08] – Xây lại UI/UX GreenSM trên nhánh doannam (T-019)
 
 - **Agent / Người thực hiện**: Codex

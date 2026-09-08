@@ -48,7 +48,6 @@
 
 | ID | Task | Agent | Phạm vi hiện tại |
 |---|---|---|---|
-| T-020 | Redesign UI/UX GreenSM theo góc nhìn người dùng thật | Codex | Chỉ frontend trên `doannam`: dùng nhận diện/asset phù hợp từ nguồn chính thức, giảm cảm giác AI-generated, tối ưu login, chat khách hàng và workspace CSKH; giữ nguyên backend/API |
 
 ---
 
@@ -63,6 +62,7 @@
 
 | ID | Task | Ngày xong | Ghi chú / Link JOURNAL |
 |---|---|---|---|
+| T-020 | Redesign UI/UX GreenSM theo góc nhìn người dùng thật | 2026-09-08 | Chỉ frontend trên `doannam`: logo vector/ảnh Green SM từ nguồn chính thức, login có visual thật, chat dùng brand mark, dashboard CSKH tối ưu theo tác vụ; `npm run typecheck`/`npm run build` pass, detector sạch, Chrome alias branch đã kiểm tra login/customer/queue/evidence/stats |
 | T-019 | Xây lại UI/UX GreenSM cho frontend trên `doannam` | 2026-09-08 | Chỉ sửa `src/frontend`: GreenSM shell/login, customer chat, dashboard queue/stats, responsive states và error copy; typecheck/build sạch; Vercel Preview branch `doannam` deploy `817f227` Live/Ready; kiểm tra trực tiếp login customer, login CSKH, HITL queue và tổng quan |
 | T-016 | Chốt quota Gemini và tạm tắt provider fallback | 2026-09-07 | JOURNAL `[2026-09-07]` — Flash Lite router/answer, `GEMINI_RPM=15`, fallback gated bằng `FALLBACK_ENABLED=false`; test 92 pass / 1 skip |
 | T-017 | Hardening free-tier production | 2026-09-08 | Code/test hardening, CI, staging deploy/migration/seed/RAG, E2E 29/29 và HITL 33/33; fast-forward merge vào `main` tại `5d02aea`; production migration giữ nguyên dữ liệu, credential Neon đã rotate, Render deploy Live; `/api/health` 200, `/api/ready` 200, login smoke 200 |
