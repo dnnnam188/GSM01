@@ -13,6 +13,29 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-08] – Hoàn tất kiểm chứng free-tier production (T-017)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-017
+
+### ✅ Đã làm được
+- Production Neon đã chạy migration `001_initial_schema`; migration idempotent và dữ liệu hiện có vẫn giữ nguyên (`users=52`, `rides=311`, `knowledge_chunks=31`, `checkpoints=928`). Không chạy seed production.
+- Credential production Neon đã được rotate do từng bị lộ; Render `DATABASE_URL` đã cập nhật bằng connection string direct mới, deployment cũ lỗi readiness đã hủy, deployment mới đã lên Live.
+- Smoke test bên ngoài production đạt: `/api/health` 200, `/api/ready` 200, `/api/auth/login` 200 và token được cấp.
+
+### 📁 File đã thay đổi
+- `.ai/TASKS.md` — chuyển T-017 sang hoàn thành và cập nhật phần còn lại.
+- `.ai/JOURNAL.md` — ghi nhận kiểm chứng production cuối phiên.
+
+### ⏳ Đang dở
+- Không còn việc chặn mục tiêu free-tier production trong phạm vi T-017.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Không. Không ghi secret hoặc connection string vào repository.
+
+### ➡️ Việc tiếp theo
+- Nếu cần trình diễn, quay video demo; đây là việc tài liệu ngoài phạm vi triển khai.
+
 ## [2026-09-08] – Kiểm chứng staging production path hoàn tất (T-017)
 
 - **Agent / Người thực hiện**: Codex
