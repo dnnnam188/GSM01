@@ -26,6 +26,27 @@ const SUGGESTIONS = [
   "Tôi để quên ví trên xe",
 ];
 
+function AssistantAvatar() {
+  return (
+    <span className="assistant-avatar" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none">
+        <path d="M7.5 19.5v-6A4.5 4.5 0 0 1 12 9h8a4.5 4.5 0 0 1 4.5 4.5v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="11" cy="20" r="2" fill="currentColor" />
+        <circle cx="21" cy="20" r="2" fill="currentColor" />
+        <path d="M11 25h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="m3 3 14 7-14 7 2-6.5 7-1-7-1L3 3Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function CustomerChat({
   session,
   onLogout,
@@ -67,16 +88,16 @@ export function CustomerChat({
 
     ws.onclose = () => {
       setConnected(false);
-      setStatus("Mất kết nối. Tải lại trang để tiếp tục.");
+      setStatus("Phiên hỗ trợ đã ngắt. Bạn có thể thử kết nối lại.");
     };
-    ws.onerror = () => setStatus("Không kết nối được tới máy chủ");
+    ws.onerror = () => setStatus("Không thể kết nối tới máy chủ hỗ trợ.");
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
       if (data.type === "ready") {
         setConnected(true);
-        setStatus("Sẵn sàng");
+        setStatus("Đang trực tuyến");
         setThreadId(data.thread_id ?? "");
         threadIdRef.current = data.thread_id ?? "";
         return;
@@ -106,7 +127,6 @@ export function CustomerChat({
       if (data.type === "token") {
         setTurns((prev) => {
           const last = prev[prev.length - 1];
-          // Lỗi ở tầng router không sinh sự kiện `intent`, nên có thể chưa có bong bóng
           if (!last || last.who !== "bot") return [...prev, { who: "bot", text: data.value }];
           return patchLast(prev, (turn) => ({ ...turn, text: turn.text + data.value }));
         });
@@ -115,7 +135,7 @@ export function CustomerChat({
 
       if (data.type === "done") {
         setWaiting(false);
-        setStatus("Sẵn sàng");
+        setStatus("Đang trực tuyến");
         setTurns((prev) => patchLast(prev, (last) => ({
           ...last,
           ttftMs: data.ttft_ms ?? null,
@@ -127,13 +147,12 @@ export function CustomerChat({
         return;
       }
 
-      // Nhân viên CSKH vừa quyết định — kết quả đẩy thẳng vào phiên đang mở
       if (data.type === "hitl_result") {
         setTurns((prev) => [
           ...prev,
           { who: "bot", text: data.message, fromHuman: true, intent: "refund.request" },
         ]);
-        setStatus("Sẵn sàng");
+        setStatus("Đang trực tuyến");
         return;
       }
 
@@ -163,40 +182,68 @@ export function CustomerChat({
   );
 
   const awaitingHuman = turns.some((turn) => turn.awaitingHuman);
-  // Hỏi điểm khi phiên đã thực sự diễn ra (từ 2 lượt trả lời trở lên) và lượt
-  // cuối đã xong. Hỏi ngay sau câu đầu tiên là hỏi giữa chừng, không phải cuối
-  // phiên — và đang chờ CSKH duyệt thì phiên chưa kết thúc để mà chấm.
   const answered = turns.filter((turn) => turn.who === "bot").length;
   const askCsat =
     answered >= 2 && !waiting && !awaitingHuman && !csatHidden && Boolean(threadId);
 
   return (
     <Shell session={session} onLogout={onLogout}>
+      <div className="page-heading page-heading--chat">
+        <div>
+          <p className="page-context">GREENSM CARE / CUSTOMER SUPPORT</p>
+          <h1>Xin chào, {session.fullName}</h1>
+          <p className="lede">Bạn cần hỗ trợ gì cho hành trình của mình hôm nay?</p>
+        </div>
+        <div className={`connection-state${connected ? " connection-state--online" : ""}`}>
+          <span className="connection-state__dot" />
+          <span>{connected ? "Đang trực tuyến" : "Đang kết nối"}</span>
+        </div>
+      </div>
+
       {awaitingHuman && (
-        <p className="notice notice--warn">
-          Yêu cầu của bạn đang chờ nhân viên phụ trách xem xét. Cứ để mở khung chat này —
-          kết quả sẽ hiện ngay tại đây khi có.
-        </p>
+        <div className="notice notice--human" role="status">
+          <span className="notice__icon" aria-hidden="true">!</span>
+          <span>
+            <strong>Yêu cầu đang được nhân viên phụ trách xem xét.</strong>
+            <small>Cứ để mở khung chat này — kết quả sẽ hiện ngay tại đây khi có.</small>
+          </span>
+        </div>
       )}
 
-      <div className="panel">
+      <div className="chat-panel panel panel--flush">
+        <div className="chat-panel__top">
+          <div className="chat-panel__assistant">
+            <AssistantAvatar />
+            <span>
+              <strong>Trợ lý GreenSM</strong>
+              <small>Tra cứu chuyến đi · chính sách · hỗ trợ khiếu nại</small>
+            </span>
+          </div>
+          <span className="chat-panel__secure">
+            <span className="secure-dot" />
+            Phiên riêng tư
+          </span>
+        </div>
+
         <div className="thread" ref={scroller}>
           {turns.length === 0 && !waiting && (
-            <div className="empty">
-              <p className="empty__title">Bạn cần hỗ trợ gì ạ?</p>
-              <p className="empty__hint">
-                Hỏi về cước phí, tra cứu chuyến đã đi, báo thất lạc đồ, hoặc yêu cầu
-                hoàn tiền. Thử một trong các câu dưới đây.
+            <div className="welcome-state">
+              <div className="welcome-state__mark"><AssistantAvatar /></div>
+              <h2>Bạn cần hỗ trợ gì ạ?</h2>
+              <p>
+                Tôi có thể tra cước, tìm chuyến đã đi, hỗ trợ đặt hoặc hủy chuyến,
+                tiếp nhận thất lạc đồ và yêu cầu hoàn tiền.
               </p>
-              <div className="row" style={{ justifyContent: "center", marginTop: 18 }}>
+              <div className="suggestion-list" aria-label="Gợi ý câu hỏi">
                 {SUGGESTIONS.map((text) => (
                   <button
                     key={text}
-                    className="btn-quiet"
+                    className="suggestion"
                     onClick={() => send(text)}
                     disabled={!connected}
                   >
-                    {text}
+                    <span>{text}</span>
+                    <span aria-hidden="true">↗</span>
                   </button>
                 ))}
               </div>
@@ -219,8 +266,6 @@ export function CustomerChat({
                 try {
                   await submitCsat(session.accessToken, threadId, score, null);
                   setRated(true);
-                  // Để lời cảm ơn nán lại một nhịp rồi mới thu gọn, chứ biến mất
-                  // ngay thì khách không kịp thấy điểm đã được ghi nhận.
                   setTimeout(() => setCsatHidden(true), 2500);
                 } catch {
                   setStatus("Chưa gửi được đánh giá, bạn thử lại giúp em ạ");
@@ -231,38 +276,40 @@ export function CustomerChat({
           )}
         </div>
 
-        <form
-          className="composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            send(draft);
-          }}
-        >
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Nhập tin nhắn…"
-            aria-label="Tin nhắn gửi trợ lý"
-            disabled={!connected || waiting}
-          />
-          <button className="btn-primary" type="submit" disabled={waiting || !draft.trim()}>
-            Gửi
-          </button>
-        </form>
-
-        <p className="status-line">
-          {waiting && <span className="pulse" aria-hidden />}
-          {status}
-          {!connected && !waiting && (
-            <button
-              className="btn-text"
-              type="button"
-              onClick={() => setConnectAttempt((attempt) => attempt + 1)}
-            >
-              Thử kết nối lại
+        <div className="composer-area">
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send(draft);
+            }}
+          >
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Viết tin nhắn cho GreenSM…"
+              aria-label="Tin nhắn gửi trợ lý"
+              disabled={!connected || waiting}
+            />
+            <button className="btn-primary composer__send" type="submit" disabled={waiting || !draft.trim()}>
+              <span>Gửi</span>
+              <SendIcon />
             </button>
-          )}
-        </p>
+          </form>
+          <p className={`status-line${connected ? " status-line--ok" : " status-line--muted"}`}>
+            <span className={`status-dot${waiting ? " status-dot--pulse" : ""}`} aria-hidden="true" />
+            <span>{status}</span>
+            {!connected && !waiting && (
+              <button
+                className="btn-text status-line__retry"
+                type="button"
+                onClick={() => setConnectAttempt((attempt) => attempt + 1)}
+              >
+                Thử kết nối lại
+              </button>
+            )}
+          </p>
+        </div>
       </div>
     </Shell>
   );
@@ -279,37 +326,24 @@ function CsatPrompt({
   onDismiss: () => void;
 }) {
   if (rated) {
-    return (
-      <p className="status-line" style={{ justifyContent: "center" }}>
-        Cảm ơn anh/chị đã đánh giá.
-      </p>
-    );
+    return <p className="csat-thanks">Cảm ơn anh/chị đã đánh giá phiên hỗ trợ.</p>;
   }
   return (
-    <div className="panel" style={{ padding: 16, textAlign: "center" }}>
-      <p className="empty__hint" style={{ marginBottom: 12 }}>
-        Em hỗ trợ anh/chị vừa rồi có ổn không ạ? (1 = rất tệ, 5 = rất tốt)
-      </p>
-      <div className="row" style={{ justifyContent: "center", gap: 8 }}>
-        {[1, 2, 3, 4, 5].map((score) => (
-          <button
-            key={score}
-            className="btn-quiet tnum"
-            style={{ minWidth: 44 }}
-            onClick={() => onRate(score)}
-            aria-label={`Chấm ${score} trên 5`}
-          >
-            {score}
-          </button>
-        ))}
+    <div className="csat-card">
+      <div>
+        <strong>Phiên hỗ trợ vừa rồi thế nào?</strong>
+        <span>Chấm điểm để GreenSM phục vụ tốt hơn.</span>
       </div>
-      <button
-        className="btn-quiet"
-        style={{ marginTop: 10, fontSize: 13 }}
-        onClick={onDismiss}
-      >
-        Bỏ qua
-      </button>
+      <div className="csat-actions">
+        <div className="csat-scale" aria-label="Đánh giá từ 1 đến 5">
+          {[1, 2, 3, 4, 5].map((score) => (
+            <button key={score} className="csat-score" onClick={() => onRate(score)} aria-label={`Chấm ${score} trên 5`}>
+              {score}
+            </button>
+          ))}
+        </div>
+        <button className="btn-text" onClick={onDismiss}>Bỏ qua</button>
+      </div>
     </div>
   );
 }
@@ -340,14 +374,13 @@ function TurnMeta({ turn }: { turn: Turn }) {
   );
 }
 
-/** Skeleton giữ đúng hình dạng bong bóng sắp hiện, thay vì vòng xoay chung chung. */
 function PendingBubble() {
   return (
     <div className="turn turn--bot" aria-live="polite" aria-label="Đang soạn câu trả lời">
-      <div className="skeleton skeleton--bubble" />
-      <div className="turn__meta" style={{ width: 140 }}>
-        <div className="skeleton skeleton--line" style={{ width: "100%", marginBottom: 0 }} />
+      <div className="bubble bubble--pending">
+        <span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" />
       </div>
+      <div className="turn__meta"><span>GreenSM đang kiểm tra thông tin…</span></div>
     </div>
   );
 }

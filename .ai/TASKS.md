@@ -49,6 +49,7 @@
 | ID | Task | Agent | Phạm vi hiện tại |
 |---|---|---|---|
 | T-017 | Hardening free-tier production trên nhánh `doannam` | Codex | ✅ Code/test hardening xong; ✅ CI xanh; ✅ staging deploy/migration/seed/RAG; ✅ E2E 29/29 và HITL 33/33; ⏳ PR `doannam` → `main`, kiểm tra production và merge |
+| T-019 | Xây lại UI/UX GreenSM cho frontend trên `doannam` | Codex | ⏳ Audit trực quan và thiết kế lại Login, Customer Chat, CSKH Dashboard; không sửa backend |
 
 ---
 
