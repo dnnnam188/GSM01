@@ -18,6 +18,23 @@ Chạy lại toàn bộ bảng trên bằng một lệnh: `.venv/Scripts/python.
 **Chạy thử**: chỉ dùng tài khoản được cấp riêng trên môi trường staging. Không đưa tài khoản demo
 hoặc mật khẩu dùng chung lên bản production.
 
+## Trạng thái triển khai
+
+GSM-01 hiện ở mức **production-minded pilot**: bản live đã được triển khai trên hạ tầng free-tier,
+đã có health check, readiness check, CI, phân tách staging/production, guardrail PII, idempotency
+và Human-in-the-loop cho các quyết định rủi ro. Bản này phù hợp để một nhóm nhỏ dùng thật có kiểm
+soát; chưa phải cam kết HA/24×7 cho lưu lượng công khai lớn.
+
+| Thành phần | Bản live |
+|---|---|
+| Frontend | [gsm-01.vercel.app](https://gsm-01.vercel.app/) |
+| Backend | FastAPI trên Render Free |
+| Readiness | [`/api/ready`](https://gsm01-api.onrender.com/api/ready) |
+| Database | PostgreSQL + pgvector trên Neon, tách branch staging/production |
+
+Không công bố tài khoản demo hoặc mật khẩu dùng chung trong README. Người đánh giá cần một tài
+khoản thử nghiệm riêng để tránh truy cập dữ liệu demo và dữ liệu nghiệp vụ của người khác.
+
 ---
 
 ## Kiến trúc
@@ -111,6 +128,50 @@ Toàn bộ các quyết định kiến trúc, kèm các phương án đã loại
 
 ---
 
+## Free-tier production profile
+
+Đây là cấu hình chi phí bằng 0 được chọn có chủ đích: chấp nhận cold start và hạn mức thấp để giữ
+kiến trúc đơn giản, có thể nâng cấp dần khi lưu lượng tăng.
+
+| Thành phần | Cấu hình hiện tại | Ý nghĩa vận hành |
+|---|---|---|
+| Backend | Render Free, một worker Uvicorn | Instance có thể ngủ sau thời gian không có request; lượt gọi đầu sau đó có thể chậm khoảng 30–60 giây |
+| Database | Neon PostgreSQL + pgvector, branch production riêng với staging | Migration có thể chạy lặp an toàn; production không chạy seed/reset dữ liệu demo |
+| Model chính | Gemini 3.5 Flash-Lite | Client tự giới hạn ở `15 RPM`; quota project đang chốt `250K TPM / 500 RPD` |
+| Provider dự phòng | `FALLBACK_ENABLED=false` | Khi Gemini hết quota hoặc lỗi, hệ thống trả lời suy giảm an toàn thay vì tự chuyển sang provider chưa kiểm chứng |
+| Giới hạn ứng dụng | Chat `5 lượt/phút/định danh`, message tối đa 4.000 ký tự | Chặn burst và bảo vệ quota free-tier |
+| Phạm vi rollout khuyến nghị | 5–10 người dùng active cùng lúc, khoảng 20–30 tài khoản dùng vừa phải | Đây là ngưỡng pilot thận trọng, không phải SLA hoặc kết quả load test quy mô lớn |
+
+### Điều đã kiểm chứng trên bản deploy
+
+- `GET /api/health` trả `200` và xác nhận môi trường production.
+- `GET /api/ready` trả `200` và xác nhận backend kết nối được database.
+- Đăng nhập smoke test trả `200` và cấp token thành công.
+- CI backend/frontend xanh; bộ E2E và kịch bản HITL đã chạy trên staging.
+- Migration production đã được áp dụng mà không seed lại hoặc nhân bản dữ liệu.
+
+### Giới hạn cần nói rõ
+
+- Chưa có autoscaling, queue dùng chung hoặc multi-worker; WebSocket hub hiện giữ trong bộ nhớ một tiến trình.
+- Chưa có provider redundancy hoạt động, nên độ sẵn sàng của câu trả lời phụ thuộc vào Gemini và quota của project.
+- Chưa thực hiện load test để chứng nhận số người dùng lớn; muốn mở công khai cần thêm monitoring,
+  backup/restore drill, rate-limit dùng store chung và kiểm thử tải.
+
+### Checklist trước khi mời người dùng thật
+
+1. Đặt toàn bộ secret trong dashboard Vercel/Render, không commit vào repository.
+2. Kiểm tra `ENVIRONMENT=production`, `CORS_ORIGINS` chỉ chứa domain HTTPS của frontend và `DATABASE_URL`
+   trỏ đúng branch production.
+3. Chạy migration trên đúng database; **không chạy seed hoặc reset demo trên production**.
+4. Nếu knowledge base thay đổi, chạy indexer có chủ đích trên đúng database rồi kiểm tra lại số lượng chunk.
+5. Xóa hoặc khóa tài khoản/case demo trước khi đưa dữ liệu người dùng thật vào.
+6. Gọi `/api/health` và `/api/ready` sau mỗi lần deploy; đọc log Render và quota Gemini trong giai đoạn pilot.
+
+Chi tiết từng biến môi trường, thứ tự deploy và các bẫy của free-tier nằm trong
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+---
+
 ## Chạy ở máy
 
 Yêu cầu: Python 3.11+, Node 20+, một PostgreSQL có `pgvector` (Neon là đủ).
@@ -143,7 +204,7 @@ cd src/frontend && npm install && npm run dev # giao diện
 ## Kiểm chứng
 
 ```bash
-.venv/Scripts/python.exe -m pytest -q                    # 69 test
+.venv/Scripts/python.exe -m pytest -q                    # hiện có 104 test được thu thập
 .venv/Scripts/python.exe -m eval.run_eval                # bảng 6 chỉ số, ~10 phút
 # E2E/HITL staging cần GSM_DEMO_PASSWORD được đặt trong terminal, không dùng default.
 .venv/Scripts/python.exe -m tests.test_e2e_slice         # kiểm đầu-cuối
