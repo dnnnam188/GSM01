@@ -29,8 +29,10 @@ export function AgentDashboard({
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
   const reload = useCallback(async () => {
+    setRefreshing(true);
     try {
       const [q, s, st] = await Promise.all([
         fetchQueue(session.accessToken),
@@ -43,6 +45,8 @@ export function AgentDashboard({
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không tải được dữ liệu");
+    } finally {
+      setRefreshing(false);
     }
   }, [session.accessToken]);
 
@@ -61,7 +65,32 @@ export function AgentDashboard({
       activeTab={tab}
       onTabChange={setTab}
     >
-      {error && <p className="notice notice--danger">{error}</p>}
+      <div className="workspace-header">
+        <div>
+          <p className="page-context">GREENSM CARE / OPERATIONS</p>
+          <h1>Trung tâm điều phối CSKH</h1>
+          <p className="lede">
+            Tập trung vào những ca cần con người quyết định, với đầy đủ dữ liệu để xử lý tự tin.
+          </p>
+        </div>
+        <div className="workspace-header__actions">
+          <span className="system-status system-status--online">
+            <span className="connection-state__dot" />
+            Hệ thống ổn định
+          </span>
+          <button className="btn-quiet btn-refresh" onClick={() => void reload()} disabled={refreshing}>
+            <span className={refreshing ? "refresh-icon refresh-icon--spin" : "refresh-icon"} aria-hidden="true">↻</span>
+            {refreshing ? "Đang cập nhật" : "Cập nhật"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="notice notice--danger notice--action" role="alert">
+          <span>{error}</span>
+          <button className="btn-text" onClick={() => void reload()}>Thử lại</button>
+        </div>
+      )}
 
       {tab === "queue" ? (
         <QueueView
@@ -92,8 +121,9 @@ function QueueView({
 
   if (cases.length === 0) {
     return (
-      <div className="panel">
+      <div className="panel queue-empty-panel">
         <div className="empty">
+          <div className="empty__illustration" aria-hidden="true">✓</div>
           <p className="empty__title">Không còn yêu cầu nào chờ duyệt</p>
           <p className="empty__hint">
             Các khoản hoàn tiền dưới hạn mức được trợ lý xử lý tự động. Chỉ những ca vượt
@@ -106,8 +136,15 @@ function QueueView({
   }
 
   return (
-    <div className="split">
-      <section className="panel panel--flush">
+    <div className="split dashboard-split">
+      <section className="panel panel--flush queue-panel">
+        <div className="queue-panel__head">
+          <div>
+            <p className="section-title">Hàng đợi rủi ro</p>
+            <h2>Chờ quyết định</h2>
+          </div>
+          <span className="queue-count">{cases.length} <small>ca</small></span>
+        </div>
         <div className="queue">
           {cases.map((item, index) => (
             <CaseRow
@@ -126,11 +163,12 @@ function QueueView({
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel evidence-panel">
         {openCase ? (
           <TranscriptView token={token} item={openCase} />
         ) : (
           <div className="empty">
+            <div className="empty__illustration empty__illustration--soft" aria-hidden="true">⌁</div>
             <p className="empty__title">Chọn một ca để xem bằng chứng</p>
             <p className="empty__hint">
               Bảng bên phải hiển thị toàn bộ hội thoại và các bước trợ lý đã thực hiện,
@@ -182,10 +220,9 @@ function CaseRow({
 
   return (
     <article
-      className="case"
+      className={`case${selected ? " case--selected" : ""}`}
       style={{
         ["--i" as string]: index,
-        background: selected ? "var(--surface-sunken)" : undefined,
       }}
     >
       <div className="case__head">
@@ -198,10 +235,11 @@ function CaseRow({
         )}
       </div>
 
-      <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
-        {item.customer_name}
-        {item.ride_code ? ` · chuyến ${item.ride_code}` : ""} · {sinceNow(item.created_at)}
-      </p>
+      <div className="case__context">
+        <strong>{item.customer_name}</strong>
+        <span>{item.ride_code ? `Chuyến ${item.ride_code}` : "Chưa có mã chuyến"}</span>
+        <span>{sinceNow(item.created_at)}</span>
+      </div>
 
       {item.reason_detail && <p className="case__evidence">{item.reason_detail}</p>}
 
@@ -276,7 +314,13 @@ function TranscriptView({ token, item }: { token: string; item: PendingCase }) {
   return (
     <div className="stack">
       <div>
-        <p className="section-title">Hội thoại · {item.refund_code}</p>
+        <div className="evidence-panel__title">
+          <div>
+            <p className="section-title">Bằng chứng ca xử lý</p>
+            <h2>Hội thoại khách hàng</h2>
+          </div>
+          <span className="mono">{item.refund_code}</span>
+        </div>
         <div className="thread" style={{ minHeight: 0, maxHeight: "34vh" }}>
           {data.messages.map((message, index) => (
             <div
@@ -297,9 +341,10 @@ function TranscriptView({ token, item }: { token: string; item: PendingCase }) {
       </div>
 
       <div>
-        <p className="section-title">
-          Trợ lý đã làm gì · {data.tool_calls.length} bước
-        </p>
+        <div className="trace__head">
+          <p className="section-title">Dấu vết xử lý</p>
+          <span className="badge">{data.tool_calls.length} bước</span>
+        </div>
         {data.tool_calls.length === 0 ? (
           <p className="empty__hint">Chưa có bước nào được ghi lại.</p>
         ) : (
@@ -346,6 +391,13 @@ function StatsView({
 
   return (
     <div className="stack">
+      <div className="section-lead">
+        <div>
+          <p className="section-title">OPERATIONS / SIGNALS</p>
+          <h2>Nhịp vận hành hôm nay</h2>
+        </div>
+        <span className="section-lead__note">Dữ liệu cập nhật theo thời gian thực</span>
+      </div>
       {alerts.map((a) => (
         <QuotaBanner key={a.key} alert={a} />
       ))}
@@ -386,8 +438,14 @@ function StatsView({
 
       {stats && <DailyChart daily={stats.daily} />}
 
-      <section className="panel">
-        <p className="section-title">Phân bố yêu cầu theo ý định</p>
+      <section className="panel intent-panel">
+        <div className="chart-head">
+          <div>
+            <p className="section-title">Phân loại</p>
+            <h2>Phân bố yêu cầu theo ý định</h2>
+          </div>
+          <span className="chart-head__legend">Theo số lượt</span>
+        </div>
         {intents.length === 0 ? (
           <p className="empty__hint">Chưa có hội thoại nào được phân loại.</p>
         ) : (
@@ -436,13 +494,13 @@ function QuotaBanner({ alert }: { alert: QuotaAlert }) {
   const vuot = alert.level === "DANGER";
   const so = (n: number) => n.toLocaleString("vi-VN");
   return (
-    <p className={vuot ? "notice notice--danger" : "notice notice--warn"}>
-      <strong>{vuot ? "Đã vượt hạn mức" : "Sắp chạm hạn mức"}</strong> · {alert.label}:{" "}
-      <span className="tnum">
-        {so(alert.current)} / {so(alert.cap)} {alert.unit}
-      </span>{" "}
-      ({alert.ratio_percent}%)
-    </p>
+    <div className={vuot ? "notice notice--danger notice--quota" : "notice notice--warn notice--quota"}>
+      <span className="notice__icon" aria-hidden="true">!</span>
+      <span>
+        <strong>{vuot ? "Đã vượt hạn mức" : "Sắp chạm hạn mức"}</strong>
+        <small>{alert.label}: <span className="tnum">{so(alert.current)} / {so(alert.cap)} {alert.unit}</span> ({alert.ratio_percent}%)</small>
+      </span>
+    </div>
   );
 }
 
@@ -459,9 +517,16 @@ function DailyChart({
   const tongHoan = daily.reduce((t, d) => t + d.refunded_vnd, 0);
 
   return (
-    <section className="panel">
-      <p className="section-title">Hoạt động 7 ngày gần nhất</p>
+    <section className="panel daily-panel">
+      <div className="chart-head">
+        <div>
+          <p className="section-title">Nhịp xử lý</p>
+          <h2>Hoạt động 7 ngày gần nhất</h2>
+        </div>
+        <span className="chart-head__legend"><i /> Tin nhắn</span>
+      </div>
       <div
+        className="daily-chart"
         style={{
           display: "grid",
           gridTemplateColumns: `repeat(${daily.length}, 1fr)`,
@@ -488,7 +553,7 @@ function DailyChart({
           </div>
         ))}
       </div>
-      <p className="empty__hint" style={{ marginTop: 12 }}>
+      <p className="empty__hint daily-total">
         Tổng hoàn tiền 7 ngày: {tongHoan.toLocaleString("vi-VN")} VNĐ
       </p>
     </section>

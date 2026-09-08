@@ -80,10 +80,19 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   if (token) headers.Authorization = `Bearer ${token}`;
   if (init.body) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new Error(
+      "Không thể kết nối tới GreenSM lúc này. Bạn kiểm tra mạng hoặc thử lại sau ít phút nhé.",
+    );
+  }
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
-    throw new Error(detail?.detail ?? `Yêu cầu thất bại (HTTP ${res.status})`);
+    if (res.status === 401) throw new Error("Phiên đăng nhập đã hết hạn. Bạn đăng nhập lại giúp em nhé.");
+    if (res.status === 429) throw new Error("Bạn đang thao tác hơi nhanh. Vui lòng thử lại sau ít giây nhé.");
+    throw new Error(detail?.detail ?? "GreenSM chưa xử lý được yêu cầu này. Bạn thử lại nhé.");
   }
   return res.json() as Promise<T>;
 }

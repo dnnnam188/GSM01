@@ -18,9 +18,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GSM-01 · Trợ lý CSKH Xanh SM",
+  title: "GreenSM Care · GSM-01",
   description:
-    "AI Agent tiếp nhận yêu cầu đặt xe và xử lý khiếu nại, có duyệt hoàn tiền bởi nhân viên.",
+    "Không gian hỗ trợ khách hàng và điều phối CSKH GreenSM.",
   icons: {
     icon: [
       {
@@ -41,10 +41,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fbfbfa" },
-    { media: "(prefers-color-scheme: dark)", color: "#121211" },
-  ],
+  themeColor: "#0e3d2b",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

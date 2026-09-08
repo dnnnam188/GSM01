@@ -62,7 +62,7 @@
 
 | ID | Task | Ngày xong | Ghi chú / Link JOURNAL |
 |---|---|---|---|
-| T-018 | Cập nhật README cho free-tier production và hồ sơ tuyển dụng | 2026-09-08 | Bổ sung trạng thái live, free-tier profile, quota Gemini, giới hạn pilot, checklist production và giới hạn chưa cam kết; sửa số liệu test từ 69 thành 104 case được thu thập |
+| T-019 | Xây lại UI/UX GreenSM cho frontend trên `doannam` | 2026-09-08 | Chỉ sửa `src/frontend`: GreenSM shell/login, customer chat, dashboard queue/stats, responsive states và error copy; typecheck/build sạch; Vercel Preview branch `doannam` deploy `817f227` Live/Ready; kiểm tra trực tiếp login customer, login CSKH, HITL queue và tổng quan |
 | T-016 | Chốt quota Gemini và tạm tắt provider fallback | 2026-09-07 | JOURNAL `[2026-09-07]` — Flash Lite router/answer, `GEMINI_RPM=15`, fallback gated bằng `FALLBACK_ENABLED=false`; test 92 pass / 1 skip |
 | T-017 | Hardening free-tier production | 2026-09-08 | Code/test hardening, CI, staging deploy/migration/seed/RAG, E2E 29/29 và HITL 33/33; fast-forward merge vào `main` tại `5d02aea`; production migration giữ nguyên dữ liệu, credential Neon đã rotate, Render deploy Live; `/api/health` 200, `/api/ready` 200, login smoke 200 |
 | T-006 | Frontend Next.js (chat khách + dashboard CSKH) | 2026-08-27 | **Người dùng tự xem và nghiệm thu**, không phải qua kiểm trực quan của agent — "frontend cơ bản vậy là được, đơn giản dễ hiểu". `npm run build` sạch, đã chạy thật trên Vercel |

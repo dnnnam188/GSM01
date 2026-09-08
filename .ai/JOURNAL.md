@@ -13,52 +13,38 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
-## [2026-09-08] – Cập nhật README cho free-tier production (T-018)
+## [2026-09-08] – Xây lại UI/UX GreenSM trên nhánh doannam (T-019)
 
 - **Agent / Người thực hiện**: Codex
-- **Task liên quan**: T-018
+- **Task liên quan**: T-019
 
 ### ✅ Đã làm được
-- README đã mô tả rõ trạng thái `production-minded pilot`, live links, kiến trúc và ranh giới giữa pilot nhỏ với public scale.
-- Bổ sung bảng free-tier: Render Free một worker, Neon staging/production, Gemini `15 RPM / 250K TPM / 500 RPD`, fallback tắt, cold start và ngưỡng rollout khuyến nghị.
-- Bổ sung checklist trước khi mời người dùng thật: secret, CORS, migration/seed, indexer, demo data và health checks.
-- Sửa ghi chú test từ 69 thành 104 test được thu thập hiện tại.
+- Xây lại visual system frontend theo hướng GreenSM: forest green, mint surface, trạng thái semantic, typography và component vocabulary thống nhất.
+- Làm mới màn hình đăng nhập với brand story, workspace access, security copy và error state thân thiện.
+- Làm mới customer chat: assistant header, connection state, suggestion cards, private-session cue, composer, loading/thinking state và CSAT.
+- Làm mới dashboard CSKH: workspace header, system status, queue HITL, evidence panel, tool trace, metrics, chart và empty/error states.
+- Giữ nguyên API contract và toàn bộ backend; chỉ thay đổi `src/frontend` cùng task tracking.
+
+### 📊 Kiểm chứng
+- `npm run typecheck`: pass.
+- `npm run build`: pass, không còn warning CSS sau token compatibility fix.
+- Impeccable detector: không phát hiện mechanical finding tại vòng kiểm UI.
+- Vercel deployment `817f227` của branch `doannam`: Ready; alias `git-doannam` hiển thị đúng bản mới.
+- Kiểm tra trực tiếp trên Chrome: login customer, customer chat, login CSKH, hàng đợi HITL, panel bằng chứng và màn hình Tổng quan; biểu đồ hoạt động đã hiển thị đúng.
 
 ### 📁 File đã thay đổi
-- `README.md` — tài liệu onboarding, production profile và recruiter-facing overview.
-- `.ai/TASKS.md` — chuyển T-018 sang hoàn thành.
+- `src/frontend/app/globals.css`, `src/frontend/app/layout.tsx`
+- `src/frontend/components/Shell.tsx`, `Login.tsx`, `CustomerChat.tsx`, `AgentDashboard.tsx`
+- `src/frontend/lib/api.ts`
 
 ### ⏳ Đang dở
-- Không.
+- Không còn việc chặn trong phạm vi UI/UX frontend của T-019.
 
 ### ⚠️ Vướng mắc / Cần con người quyết
-- Không. Không thêm secret hoặc credential vào tài liệu.
+- Không. Deployment unique URL của Vercel không phải origin CORS staging; kiểm thử chức năng dùng alias branch `git-doannam` đã được cấu hình đúng.
 
 ### ➡️ Việc tiếp theo
-- Không có việc bắt buộc; khi hạn mức/provider thay đổi thì cập nhật lại profile free-tier.
-
-## [2026-09-08] – Hoàn tất kiểm chứng free-tier production (T-017)
-
-- **Agent / Người thực hiện**: Codex
-- **Task liên quan**: T-017
-
-### ✅ Đã làm được
-- Production Neon đã chạy migration `001_initial_schema`; migration idempotent và dữ liệu hiện có vẫn giữ nguyên (`users=52`, `rides=311`, `knowledge_chunks=31`, `checkpoints=928`). Không chạy seed production.
-- Credential production Neon đã được rotate do từng bị lộ; Render `DATABASE_URL` đã cập nhật bằng connection string direct mới, deployment cũ lỗi readiness đã hủy, deployment mới đã lên Live.
-- Smoke test bên ngoài production đạt: `/api/health` 200, `/api/ready` 200, `/api/auth/login` 200 và token được cấp.
-
-### 📁 File đã thay đổi
-- `.ai/TASKS.md` — chuyển T-017 sang hoàn thành và cập nhật phần còn lại.
-- `.ai/JOURNAL.md` — ghi nhận kiểm chứng production cuối phiên.
-
-### ⏳ Đang dở
-- Không còn việc chặn mục tiêu free-tier production trong phạm vi T-017.
-
-### ⚠️ Vướng mắc / Cần con người quyết
-- Không. Không ghi secret hoặc connection string vào repository.
-
-### ➡️ Việc tiếp theo
-- Nếu cần trình diễn, quay video demo; đây là việc tài liệu ngoài phạm vi triển khai.
+- Người dùng có thể review trên alias `git-doannam`; chỉ merge vào `main` sau khi duyệt visual.
 
 ## [2026-09-08] – Kiểm chứng staging production path hoàn tất (T-017)
 
