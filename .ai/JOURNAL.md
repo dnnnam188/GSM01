@@ -13,6 +13,30 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-08] – Kiểm chứng staging production path hoàn tất (T-017)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-017 ⏳
+
+### ✅ Đã làm được
+- Tạo Render `gsm01-api-staging` từ branch `doannam`, deploy live commit `3891d3c`.
+- Tạo Neon branch `staging`, áp dụng migration `001_initial_schema`, seed dữ liệu demo và nạp knowledge base RAG.
+- Tách biến Vercel `NEXT_PUBLIC_API_BASE` và `NEXT_PUBLIC_WS_BASE` theo Production/Preview; Preview trỏ Render staging.
+- Cập nhật CORS Render staging theo domain Preview ổn định và redeploy thành công.
+- Kiểm thử thủ công: đăng nhập khách/CSKH, WebSocket, trả lời RAG, tạo case hoàn tiền HITL và duyệt thành công.
+
+### 📊 Kiểm chứng
+- E2E staging: **29/29 phép kiểm đạt**.
+- HITL staging: **33/33 phép kiểm đạt**.
+- `/api/health` và `/api/ready` staging: HTTP 200.
+- Render production không bị thay đổi; dashboard vẫn hiển thị Live nhưng health probe từ ngoài có lúc timeout do free instance spin-down, cần kiểm tra lại trước khi merge.
+
+### ⏳ Đang dở
+- Chưa tạo/merge Pull Request `doannam` → `main`.
+
+### ➡️ Việc tiếp theo
+- Kiểm tra production thức lại và trả 200; tạo Pull Request, chờ CI xanh lần cuối, rồi mới merge vào `main`.
+
 ## [2026-09-08] – Hardening free-tier production trên nhánh doannam (T-017)
 
 - **Agent / Người thực hiện**: Codex

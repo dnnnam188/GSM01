@@ -48,7 +48,7 @@
 
 | ID | Task | Agent | Phạm vi hiện tại |
 |---|---|---|---|
-| T-017 | Hardening free-tier production trên nhánh `doannam` | Codex | ✅ Code/test hardening xong; ✅ sửa CI thiếu Ruff/Pytest; ⏳ staging deploy, migration và e2e/HITL với key hợp lệ còn chờ |
+| T-017 | Hardening free-tier production trên nhánh `doannam` | Codex | ✅ Code/test hardening xong; ✅ CI xanh; ✅ staging deploy/migration/seed/RAG; ✅ E2E 29/29 và HITL 33/33; ⏳ PR `doannam` → `main`, kiểm tra production và merge |
 
 ---
 
