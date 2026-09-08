@@ -49,7 +49,6 @@
 | ID | Task | Agent | Phạm vi hiện tại |
 |---|---|---|---|
 | T-017 | Hardening free-tier production trên nhánh `doannam` | Codex | ✅ Code/test hardening xong; ✅ CI xanh; ✅ staging deploy/migration/seed/RAG; ✅ E2E 29/29 và HITL 33/33; ⏳ PR `doannam` → `main`, kiểm tra production và merge |
-| T-019 | Xây lại UI/UX GreenSM cho frontend trên `doannam` | Codex | ⏳ Audit trực quan và thiết kế lại Login, Customer Chat, CSKH Dashboard; không sửa backend |
 
 ---
 
@@ -65,6 +64,7 @@
 
 | ID | Task | Ngày xong | Ghi chú / Link JOURNAL |
 |---|---|---|---|
+| T-019 | Xây lại UI/UX GreenSM cho frontend trên `doannam` | 2026-09-08 | Chỉ sửa `src/frontend`: GreenSM shell/login, customer chat, dashboard queue/stats, responsive states và error copy; typecheck/build sạch; Vercel Preview branch `doannam` deploy `817f227` Live/Ready; kiểm tra trực tiếp login customer, login CSKH, HITL queue và tổng quan |
 | T-016 | Chốt quota Gemini và tạm tắt provider fallback | 2026-09-07 | JOURNAL `[2026-09-07]` — Flash Lite router/answer, `GEMINI_RPM=15`, fallback gated bằng `FALLBACK_ENABLED=false`; test 92 pass / 1 skip |
 | T-006 | Frontend Next.js (chat khách + dashboard CSKH) | 2026-08-27 | **Người dùng tự xem và nghiệm thu**, không phải qua kiểm trực quan của agent — "frontend cơ bản vậy là được, đơn giản dễ hiểu". `npm run build` sạch, đã chạy thật trên Vercel |
 | T-015 | Thu thập CSAT cuối phiên (F16) | 2026-08-27 | JOURNAL `[2026-08-27] D12` — hỏi 1–5 sau 2 lượt trả lời; 13 test, trọng tâm là **không chấm được lên phiên của người khác**; chạy thật qua WebSocket → dashboard nhích 4,25 → 4,4 |

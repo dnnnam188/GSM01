@@ -13,6 +13,39 @@
 
 <!-- Thêm entry mới ngay dưới dòng này -->
 
+## [2026-09-08] – Xây lại UI/UX GreenSM trên nhánh doannam (T-019)
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-019
+
+### ✅ Đã làm được
+- Xây lại visual system frontend theo hướng GreenSM: forest green, mint surface, trạng thái semantic, typography và component vocabulary thống nhất.
+- Làm mới màn hình đăng nhập với brand story, workspace access, security copy và error state thân thiện.
+- Làm mới customer chat: assistant header, connection state, suggestion cards, private-session cue, composer, loading/thinking state và CSAT.
+- Làm mới dashboard CSKH: workspace header, system status, queue HITL, evidence panel, tool trace, metrics, chart và empty/error states.
+- Giữ nguyên API contract và toàn bộ backend; chỉ thay đổi `src/frontend` cùng task tracking.
+
+### 📊 Kiểm chứng
+- `npm run typecheck`: pass.
+- `npm run build`: pass, không còn warning CSS sau token compatibility fix.
+- Impeccable detector: không phát hiện mechanical finding tại vòng kiểm UI.
+- Vercel deployment `817f227` của branch `doannam`: Ready; alias `git-doannam` hiển thị đúng bản mới.
+- Kiểm tra trực tiếp trên Chrome: login customer, customer chat, login CSKH, hàng đợi HITL, panel bằng chứng và màn hình Tổng quan; biểu đồ hoạt động đã hiển thị đúng.
+
+### 📁 File đã thay đổi
+- `src/frontend/app/globals.css`, `src/frontend/app/layout.tsx`
+- `src/frontend/components/Shell.tsx`, `Login.tsx`, `CustomerChat.tsx`, `AgentDashboard.tsx`
+- `src/frontend/lib/api.ts`
+
+### ⏳ Đang dở
+- Không còn việc chặn trong phạm vi UI/UX frontend của T-019.
+
+### ⚠️ Vướng mắc / Cần con người quyết
+- Không. Deployment unique URL của Vercel không phải origin CORS staging; kiểm thử chức năng dùng alias branch `git-doannam` đã được cấu hình đúng.
+
+### ➡️ Việc tiếp theo
+- Người dùng có thể review trên alias `git-doannam`; chỉ merge vào `main` sau khi duyệt visual.
+
 ## [2026-09-08] – Kiểm chứng staging production path hoàn tất (T-017)
 
 - **Agent / Người thực hiện**: Codex
