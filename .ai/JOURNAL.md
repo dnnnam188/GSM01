@@ -1223,3 +1223,11 @@ chạy lại → **100% (80/80)**, teencode từ 88,9% lên 9/9. Đổi lại to
 
 ### ➡️ Việc tiếp theo
 - Thiết kế Data Schema (PostgreSQL DDL) và Pydantic Schemas cho các Tool Function (T-002, T-003).
+
+## [2026-09-08] — Merge hardening vào main
+
+- **Agent / Người thực hiện**: Codex
+- **Task liên quan**: T-017
+- CI đã xanh trên commit `680be54`; staging Render đã live và readiness trả `200`.
+- Nhánh `doannam` được fast-forward merge vào `main`, sau đó push thành công; `main` và `origin/main` cùng ở `680be54`.
+- Việc còn lại: kiểm tra production sau merge và rotate credential production đã từng lộ.
