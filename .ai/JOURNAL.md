@@ -19,6 +19,7 @@
 - **Task liên quan**: T-017 ⏳
 
 ### ✅ Đã làm được
+- Sửa CI: cài `ruff` và `pytest` riêng sau production requirements, vì `requirements.txt` không chứa nhóm dev.
 - Giữ `main` nguyên trạng; mọi thay đổi nằm trên `doannam`.
 - Thêm one-time WebSocket ticket gửi trong frame auth đầu tiên; access token dài hạn không còn nằm trong URL.
 - Thêm login/chat sliding-window limiter, giới hạn frame/message, idle timeout, Origin check và `X-Request-ID` log an toàn.
@@ -30,6 +31,7 @@
 - Thêm GitHub Actions CI cho Ruff, compile, unit/protocol tests, frontend typecheck/build.
 
 ### 📊 Kiểm chứng
+- CI command tương đương local: Ruff pass, compile pass, **25 test pass**.
 - Ruff: pass.
 - Full backend regression: **103 passed, 1 skipped**.
 - Hardening/protocol tests: **25 passed**; vòng cuối riêng protocol/guards/limiter: **11 passed**.
