@@ -22,6 +22,7 @@
 | Backend (Windows) | `run_dev.py` | ✅ `.venv/Scripts/python.exe run_dev.py` — **bắt buộc trên Windows**, xem ADR-003 |
 | Backend (Linux/Render) | `src/backend/main.py` | ✅ `uvicorn src.backend.main:app` |
 | Frontend | `src/frontend/` (Next.js 15) | ✅ `npm run dev` trong `src/frontend/` |
+| Frontend brand assets | `src/frontend/public/brand/` | Ảnh Green SM dùng cho login và `SOURCES.md` ghi nguồn/ghi chú trademark |
 | Cấu hình deploy | `render.yaml`, `requirements.txt`, `docs/DEPLOY.md` | ✅ Sẵn sàng, chưa bấm deploy |
 | Bộ eval | `eval/run_eval.py` | ✅ Đã có, chạy ra số thật |
 | Kịch bản demo 5 phút | `docs/DEMO.md` | ✅ Kèm cách xử lý sự cố và câu hỏi hay gặp |

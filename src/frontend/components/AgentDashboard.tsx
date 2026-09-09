@@ -17,6 +17,36 @@ import {
 } from "@/lib/api";
 import { INTENT_LABEL, REASON_LABEL, money, ms, sinceNow, when } from "@/lib/format";
 
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      className={spinning ? "refresh-icon refresh-icon--spin" : "refresh-icon"}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path d="M16 9a6 6 0 0 0-10.7-3.7L4 6.8M4 4v2.8h2.8M4 11a6 6 0 0 0 10.7 3.7l1.3-1.5M16 16v-2.8h-2.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="m4.5 10.2 3.6 3.6 7.4-7.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function EvidenceIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M10 3.5a6.5 6.5 0 1 0 6.5 6.5A6.5 6.5 0 0 0 10 3.5Z" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 7v3.5l2.2 1.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function AgentDashboard({
   session,
   onLogout,
@@ -67,7 +97,6 @@ export function AgentDashboard({
     >
       <div className="workspace-header">
         <div>
-          <p className="page-context">GREENSM CARE / OPERATIONS</p>
           <h1>Trung tâm điều phối CSKH</h1>
           <p className="lede">
             Tập trung vào những ca cần con người quyết định, với đầy đủ dữ liệu để xử lý tự tin.
@@ -79,7 +108,7 @@ export function AgentDashboard({
             Hệ thống ổn định
           </span>
           <button className="btn-quiet btn-refresh" onClick={() => void reload()} disabled={refreshing}>
-            <span className={refreshing ? "refresh-icon refresh-icon--spin" : "refresh-icon"} aria-hidden="true">↻</span>
+            <RefreshIcon spinning={refreshing} />
             {refreshing ? "Đang cập nhật" : "Cập nhật"}
           </button>
         </div>
@@ -123,7 +152,7 @@ function QueueView({
     return (
       <div className="panel queue-empty-panel">
         <div className="empty">
-          <div className="empty__illustration" aria-hidden="true">✓</div>
+          <div className="empty__illustration" aria-hidden="true"><CheckIcon /></div>
           <p className="empty__title">Không còn yêu cầu nào chờ duyệt</p>
           <p className="empty__hint">
             Các khoản hoàn tiền dưới hạn mức được trợ lý xử lý tự động. Chỉ những ca vượt
@@ -140,8 +169,8 @@ function QueueView({
       <section className="panel panel--flush queue-panel">
         <div className="queue-panel__head">
           <div>
-            <p className="section-title">Hàng đợi rủi ro</p>
             <h2>Chờ quyết định</h2>
+            <p className="queue-panel__sub">Các ca cần người duyệt trước khi hoàn tiền.</p>
           </div>
           <span className="queue-count">{cases.length} <small>ca</small></span>
         </div>
@@ -168,7 +197,7 @@ function QueueView({
           <TranscriptView token={token} item={openCase} />
         ) : (
           <div className="empty">
-            <div className="empty__illustration empty__illustration--soft" aria-hidden="true">⌁</div>
+            <div className="empty__illustration empty__illustration--soft" aria-hidden="true"><EvidenceIcon /></div>
             <p className="empty__title">Chọn một ca để xem bằng chứng</p>
             <p className="empty__hint">
               Bảng bên phải hiển thị toàn bộ hội thoại và các bước trợ lý đã thực hiện,
@@ -316,7 +345,6 @@ function TranscriptView({ token, item }: { token: string; item: PendingCase }) {
       <div>
         <div className="evidence-panel__title">
           <div>
-            <p className="section-title">Bằng chứng ca xử lý</p>
             <h2>Hội thoại khách hàng</h2>
           </div>
           <span className="mono">{item.refund_code}</span>
@@ -342,7 +370,7 @@ function TranscriptView({ token, item }: { token: string; item: PendingCase }) {
 
       <div>
         <div className="trace__head">
-          <p className="section-title">Dấu vết xử lý</p>
+          <h3 className="trace__title">Dấu vết xử lý</h3>
           <span className="badge">{data.tool_calls.length} bước</span>
         </div>
         {data.tool_calls.length === 0 ? (
@@ -392,9 +420,9 @@ function StatsView({
   return (
     <div className="stack">
       <div className="section-lead">
-        <div>
-          <p className="section-title">OPERATIONS / SIGNALS</p>
+      <div>
           <h2>Nhịp vận hành hôm nay</h2>
+          <p className="section-lead__sub">Các chỉ số giúp ca trực biết nơi cần tập trung.</p>
         </div>
         <span className="section-lead__note">Dữ liệu cập nhật theo thời gian thực</span>
       </div>
@@ -441,7 +469,6 @@ function StatsView({
       <section className="panel intent-panel">
         <div className="chart-head">
           <div>
-            <p className="section-title">Phân loại</p>
             <h2>Phân bố yêu cầu theo ý định</h2>
           </div>
           <span className="chart-head__legend">Theo số lượt</span>
@@ -520,7 +547,6 @@ function DailyChart({
     <section className="panel daily-panel">
       <div className="chart-head">
         <div>
-          <p className="section-title">Nhịp xử lý</p>
           <h2>Hoạt động 7 ngày gần nhất</h2>
         </div>
         <span className="chart-head__legend"><i /> Tin nhắn</span>
